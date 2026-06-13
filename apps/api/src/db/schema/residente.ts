@@ -1,0 +1,25 @@
+import { sql } from 'drizzle-orm';
+import { boolean, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { tenant } from './tenant.js';
+
+export const residente = pgTable(
+  'residente',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid('tenant_id').notNull().references(() => tenant.id, { onDelete: 'cascade' }),
+    nombre: text('nombre').notNull(),
+    telefonoE164: text('telefono_e164').notNull(),
+    email: text('email'),
+    passwordHash: text('password_hash'),
+    activo: boolean('activo').notNull().default(true),
+    pushToken: text('push_token'),
+    pushTokenUpdatedAt: timestamp('push_token_updated_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantTelefonoUnique: uniqueIndex('residente_tenant_telefono_unique').on(t.tenantId, t.telefonoE164),
+  }),
+);
+
+export type Residente = typeof residente.$inferSelect;
+export type NewResidente = typeof residente.$inferInsert;

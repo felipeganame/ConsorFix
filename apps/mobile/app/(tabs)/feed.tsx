@@ -1,0 +1,181 @@
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Chip } from '../../src/components/Chip.js';
+import { MobileHeader } from '../../src/components/Header.js';
+import { listFeed, type FeedTicket } from '../../src/lib/api.js';
+import {
+  COLORS,
+  ESTADO_LABEL,
+  RADIUS,
+  URGENCIA_LABEL,
+} from '../../src/lib/colors.js';
+
+const FILTERS: Array<{ key: 'all' | 'COMUN' | 'CONDUCTA'; label: string }> = [
+  { key: 'all', label: 'Todos' },
+  { key: 'COMUN', label: 'Espacios comunes' },
+  { key: 'CONDUCTA', label: 'Conducta' },
+];
+
+const URGENCIA_CHIP: Record<string, 'crit' | 'med' | 'ok'> = {
+  CRITICA: 'crit',
+  ALTA: 'crit',
+  MEDIA: 'med',
+  BAJA: 'ok',
+};
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.round(diff / 60_000);
+  if (m < 1) return 'recién';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `hace ${h} h`;
+  const days = Math.round(h / 24);
+  if (days === 1) return 'ayer';
+  return `hace ${days} d`;
+}
+
+export default function FeedScreen(): JSX.Element {
+  const router = useRouter();
+  const [tickets, setTickets] = useState<FeedTicket[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'COMUN' | 'CONDUCTA'>('all');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTickets(await listFeed());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
+
+  const visible = useMemo(() => {
+    if (filter === 'all') return tickets;
+    if (filter === 'CONDUCTA') return tickets.filter((t) => t.tipo === 'CONDUCTA');
+    return tickets.filter((t) => t.tipo === 'INFRAESTRUCTURA' && t.origen === 'ESPACIO_COMUN');
+  }, [filter, tickets]);
+
+  return (
+    <View style={styles.wrap}>
+      <MobileHeader title="Comunidad" subtitle="Lo que pasa en tu edificio" />
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filters}
+      >
+        {FILTERS.map((f) => (
+          <Pressable
+            key={f.key}
+            style={[styles.filterChip, filter === f.key && styles.filterChipOn]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Text style={[styles.filterText, filter === f.key && styles.filterTextOn]}>
+              {f.label}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {error && <Text style={styles.error}>{error}</Text>}
+
+      <FlatList
+        data={visible}
+        keyExtractor={(t) => t.id}
+        contentContainerStyle={visible.length === 0 ? { flex: 1 } : { padding: 14, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={COLORS.blue700} />}
+        ListEmptyComponent={
+          loading ? null : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Sin reportes visibles todavía</Text>
+              <Text style={styles.emptySub}>Usá la pestaña Reportar para crear el primero.</Text>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push(`/tickets/${item.id}`)}
+          >
+            <View style={styles.cardChips}>
+              <Chip
+                label={
+                  item.tipo === 'CONDUCTA'
+                    ? 'Conducta'
+                    : item.origen === 'ESPACIO_COMUN'
+                      ? 'Espacio común'
+                      : 'Unidad'
+                }
+                variant={item.tipo === 'CONDUCTA' ? 'conduct' : 'blue'}
+              />
+              <Chip
+                label={URGENCIA_LABEL[item.urgencia] ?? item.urgencia}
+                variant={URGENCIA_CHIP[item.urgencia] ?? 'default'}
+                dot
+              />
+              {item.voted && <Chip label="★ Votado" variant="ok" />}
+            </View>
+            <Text style={styles.cardTitle}>{item.titulo}</Text>
+            <Text style={styles.cardDesc} numberOfLines={2}>{item.descripcionNormalizada}</Text>
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardMeta}>
+                {ESTADO_LABEL[item.estado]} · {relativeTime(item.createdAt)}
+              </Text>
+              <View style={styles.votes}>
+                <Text style={styles.votesText}>{item.votosCount}</Text>
+                <Text style={styles.votesLabel}>{item.votosCount === 1 ? 'voto' : 'votos'}</Text>
+              </View>
+            </View>
+          </Pressable>
+        )}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flex: 1, backgroundColor: COLORS.bg },
+  filters: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 10, gap: 8 },
+  filterChip: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+    backgroundColor: COLORS.surface, borderColor: COLORS.line, borderWidth: 1,
+  },
+  filterChipOn: { backgroundColor: COLORS.ink, borderColor: COLORS.ink },
+  filterText: { fontSize: 12.5, color: COLORS.ink2, fontWeight: '600' },
+  filterTextOn: { color: 'white' },
+  error: {
+    color: COLORS.critical, backgroundColor: COLORS.criticalBg,
+    padding: 10, marginHorizontal: 14, marginTop: 10, borderRadius: 8, fontSize: 12.5,
+  },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
+  emptyTitle: { fontSize: 15, fontWeight: '600', color: COLORS.ink, marginBottom: 4 },
+  emptySub: { fontSize: 13, color: COLORS.ink3, textAlign: 'center' },
+  card: {
+    backgroundColor: COLORS.surface, borderColor: COLORS.line, borderWidth: 1,
+    borderRadius: RADIUS.lg, padding: 14, marginBottom: 10, gap: 8,
+  },
+  cardChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  cardTitle: { fontSize: 15.5, fontWeight: '600', color: COLORS.ink, letterSpacing: -0.2 },
+  cardDesc: { color: COLORS.ink3, fontSize: 13, lineHeight: 18 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardMeta: { color: COLORS.ink3, fontSize: 11.5 },
+  votes: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  votesText: { color: COLORS.blue700, fontSize: 16, fontWeight: '700' },
+  votesLabel: { color: COLORS.ink3, fontSize: 11 },
+});

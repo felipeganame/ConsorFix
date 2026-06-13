@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/settings.json.example
+.idea/
+
+# Test/coverage
+coverage/
+.nyc_output/
+
+# Expo / RN
+.expo/
+.expo-shared/
+*.apk
+*.ipa
+android/build/
+ios/build/
+
+# Storage
+storage/
+uploads/
+
+# Ruflo runtime
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+.claude/memory.db
+.claude/memory.db-*
+.swarm/
+ruvector.db
+ruvector.db-*
+
+# Misc
+*.tgz

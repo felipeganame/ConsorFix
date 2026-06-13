@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+.turbo
+coverage
+*.lock
+pnpm-lock.yaml
+.claude-flow
+.claude/memory.db*
