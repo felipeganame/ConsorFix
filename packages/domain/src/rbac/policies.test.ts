@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canInviteInquilino, canResidenteSeeTicket } from './policies.js';
+import { canInviteInquilino, canResidenteSeeCosto, canResidenteSeeTicket } from './policies.js';
 
 const cons1 = 'c1';
 const unidadA = 'u-A';
@@ -113,5 +113,48 @@ describe('canResidenteSeeTicket', () => {
     };
     expect(canResidenteSeeTicket(propietarioDeA, t)).toBe(true);
     expect(canResidenteSeeTicket(propietarioDeB, t)).toBe(false);
+  });
+});
+
+describe('canResidenteSeeCosto (G10)', () => {
+  const comun = {
+    tipo: 'INFRAESTRUCTURA' as const,
+    origen: 'ESPACIO_COMUN' as const,
+    unidadId: null,
+    consorcioId: cons1,
+  };
+
+  it('costo de ESPACIO_COMUN: visible a cualquier residente del consorcio', () => {
+    expect(canResidenteSeeCosto(propietarioDeA, comun)).toBe(true);
+    expect(canResidenteSeeCosto(propietarioDeB, comun)).toBe(true);
+  });
+
+  it('costo de ticket de UNIDAD: privado, no visible (ni para el ocupante)', () => {
+    const unidadTicket = {
+      tipo: 'INFRAESTRUCTURA' as const,
+      origen: 'UNIDAD' as const,
+      unidadId: unidadA,
+      consorcioId: cons1,
+    };
+    expect(canResidenteSeeCosto(propietarioDeA, unidadTicket)).toBe(false);
+  });
+
+  it('costo de ticket de CONDUCTA: nunca visible', () => {
+    const conducta = {
+      tipo: 'CONDUCTA' as const,
+      origen: null,
+      unidadId: unidadA,
+      consorcioId: cons1,
+    };
+    expect(canResidenteSeeCosto(propietarioDeA, conducta)).toBe(false);
+  });
+
+  it('residente de otro consorcio no ve el costo común', () => {
+    const externo = {
+      residenteId: 'r-X',
+      consorcioIds: new Set(['c-otro']),
+      unidadIds: new Set<string>(),
+    };
+    expect(canResidenteSeeCosto(externo, comun)).toBe(false);
   });
 });

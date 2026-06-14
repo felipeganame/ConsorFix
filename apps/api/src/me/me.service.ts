@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { canResidenteSeeTicket } from '@consorciofix/domain';
-import { ticket, unidad, vinculoResidente, voto } from '../db/schema/index.js';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { canResidenteSeeCosto, canResidenteSeeTicket } from '@consorciofix/domain';
+import { gasto, ticket, unidad, vinculoResidente, voto } from '../db/schema/index.js';
 import { withTenant } from '../db/client.js';
 
 @Injectable()
@@ -59,6 +59,42 @@ export class MeService {
         .where(and(eq(voto.tenantId, tenantId), eq(voto.residenteId, residenteId)));
       const votedSet = new Set(myVotos.map((v) => v.ticketId));
 
+      // Costos confirmados visibles (G10 / RF-D05 / RF-E02): solo de tickets
+      // ESPACIO_COMUN que el residente puede ver. Privacidad de unidad/conducta
+      // se resuelve en `canResidenteSeeCosto` (packages/domain).
+      const costoTicketIds = visible
+        .filter((t) =>
+          canResidenteSeeCosto(
+            { residenteId, consorcioIds, unidadIds },
+            { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, consorcioId: t.consorcioId },
+          ),
+        )
+        .map((t) => t.id);
+
+      const costoByTicket = new Map<string, Array<{ moneda: string; total: number }>>();
+      if (costoTicketIds.length > 0) {
+        const rows = await tx
+          .select({
+            ticketId: gasto.ticketId,
+            moneda: gasto.moneda,
+            total: sql<string>`coalesce(sum(${gasto.monto}), 0)::text`,
+          })
+          .from(gasto)
+          .where(
+            and(
+              eq(gasto.tenantId, tenantId),
+              eq(gasto.estado, 'CONFIRMADO'),
+              inArray(gasto.ticketId, costoTicketIds),
+            ),
+          )
+          .groupBy(gasto.ticketId, gasto.moneda);
+        for (const r of rows) {
+          const arr = costoByTicket.get(r.ticketId) ?? [];
+          arr.push({ moneda: r.moneda, total: Number(r.total) });
+          costoByTicket.set(r.ticketId, arr);
+        }
+      }
+
       return visible.map((t) => ({
         id: t.id,
         consorcioId: t.consorcioId,
@@ -72,6 +108,12 @@ export class MeService {
         votosCount: t.votosCount,
         reportanteId: t.tipo === 'CONDUCTA' ? null : t.reportanteId,
         voted: votedSet.has(t.id),
+        // null cuando el costo no es visible (unidad/conducta); [] si es común sin costo aún.
+        costosConfirmados: costoByTicket.has(t.id)
+          ? costoByTicket.get(t.id)!
+          : costoTicketIds.includes(t.id)
+            ? []
+            : null,
         createdAt: t.createdAt,
         validatedAt: t.validatedAt,
         solucionadoAt: t.solucionadoAt,

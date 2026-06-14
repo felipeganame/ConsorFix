@@ -64,3 +64,22 @@ export function canResidenteSeeTicket(
   // origen aún no validado por admin: tratarlo como UNIDAD por defecto seguro.
   return ticket.unidadId !== null && user.unidadIds.has(ticket.unidadId);
 }
+
+/**
+ * Reglas de visibilidad del COSTO confirmado de un ticket para un RESIDENTE (G10).
+ *
+ * La transparencia de costos es la propuesta de valor, pero solo aplica a
+ * espacios comunes: el costo confirmado de un ticket ESPACIO_COMUN es visible
+ * a todos los residentes del consorcio. Los costos de tickets de UNIDAD o de
+ * CONDUCTA son privados (no se exponen en el feed del residente).
+ *
+ * Presupuestos/borradores no se consideran acá: el caller debe filtrar por
+ * gasto.estado = CONFIRMADO antes de exponer montos.
+ */
+export function canResidenteSeeCosto(
+  user: ResidenteCtx,
+  ticket: TicketVisibilityCtx,
+): boolean {
+  if (!canResidenteSeeTicket(user, ticket)) return false;
+  return ticket.tipo === 'INFRAESTRUCTURA' && ticket.origen === 'ESPACIO_COMUN';
+}

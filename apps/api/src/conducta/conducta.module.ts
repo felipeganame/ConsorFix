@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConductaController } from './conducta.controller.js';
+import { ConductaController, HistorialConductaController } from './conducta.controller.js';
 
 @Module({
-  controllers: [ConductaController],
+  controllers: [ConductaController, HistorialConductaController],
 })
 export class ConductaModule {}

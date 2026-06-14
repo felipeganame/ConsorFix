@@ -43,17 +43,18 @@ export class MetricsService {
           ),
         );
 
-      // costo acumulado confirmado.
-      const baseGasto = consorcioId
-        ? and(eq(gasto.tenantId, tenantId), eq(gasto.estado, 'CONFIRMADO'))
-        : and(eq(gasto.tenantId, tenantId), eq(gasto.estado, 'CONFIRMADO'));
+      // costo acumulado confirmado. Se filtra por consorcio vía join con ticket
+      // (gasto no tiene consorcio_id propio; cuelga del ticket).
+      const gastoConds = [eq(gasto.tenantId, tenantId), eq(gasto.estado, 'CONFIRMADO')];
+      if (consorcioId) gastoConds.push(eq(ticket.consorcioId, consorcioId));
       const gastosRows = await tx
         .select({
           moneda: gasto.moneda,
           total: sql<string>`coalesce(sum(${gasto.monto}), 0)::text`,
         })
         .from(gasto)
-        .where(baseGasto)
+        .innerJoin(ticket, eq(ticket.id, gasto.ticketId))
+        .where(and(...gastoConds))
         .groupBy(gasto.moneda);
 
       return {
