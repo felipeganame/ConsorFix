@@ -46,9 +46,31 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  # Las suites de integración y de aislamiento corren contra un Postgres real:
+  # necesitan pgvector, las migraciones aplicadas y —sobre todo— la separación
+  # de roles owner/app, porque RLS no aplica al dueño de las tablas (regla 1 de
+  # CLAUDE.md). Reusamos el MISMO script de bootstrap que docker compose para
+  # que dev y CI no divergan.
   integration:
-    name: Integration (Testcontainers)
+    name: Integration (Postgres)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: consorciofix
+          POSTGRES_USER: owner_user
+          POSTGRES_PASSWORD: owner_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U owner_user -d consorciofix"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://app_user:app_pass@localhost:5432/consorciofix
+      DATABASE_OWNER_URL: postgres://owner_user:owner_pass@localhost:5432/consorciofix
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -59,13 +81,31 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Bootstrap extensiones y roles
+        run: psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -f infra/docker/postgres/init/01-extensions-and-roles.sql
+      - run: pnpm db:migrate
       - run: pnpm test:integration
-        env:
-          TESTCONTAINERS_RYUK_DISABLED: 'true'
 
   isolation:
     name: Multi-tenant isolation
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: consorciofix
+          POSTGRES_USER: owner_user
+          POSTGRES_PASSWORD: owner_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U owner_user -d consorciofix"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://app_user:app_pass@localhost:5432/consorciofix
+      DATABASE_OWNER_URL: postgres://owner_user:owner_pass@localhost:5432/consorciofix
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -76,6 +116,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Bootstrap extensiones y roles
+        run: psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -f infra/docker/postgres/init/01-extensions-and-roles.sql
+      - run: pnpm db:migrate
       - run: pnpm test:isolation
 
   build:
@@ -107,4 +150,4 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod --audit-level=high
+      - run: node scripts/audit-ci.cjs
