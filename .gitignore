@@ -46,14 +46,22 @@ storage/
 uploads/
 
 # Ruflo runtime
-.claude-flow/data/
-.claude-flow/logs/
-.claude-flow/sessions/
+# Con `**/` para que aplique también en apps/* y packages/*: un patrón con
+# slash interno queda anclado a la raíz y no matchea en subdirectorios.
+**/.claude-flow/data/
+**/.claude-flow/logs/
+**/.claude-flow/sessions/
 .claude/memory.db
 .claude/memory.db-*
 .swarm/
 ruvector.db
 ruvector.db-*
+
+# Notas de trabajo locales (borradores de PR, apuntes de sesión).
+# Se quedan en disco pero no se versionan.
+falta.txt
+pr-fase5.txt
+notas-*.txt
 
 # Misc
 *.tgz
