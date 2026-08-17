@@ -48,6 +48,12 @@ export class JwtService {
       if (typeof payload.sub !== 'string' || typeof payload.kind !== 'string') {
         throw new UnauthorizedException('invalid token payload');
       }
+      // Un refresh NO sirve como access. Ambos se firman con el mismo secreto,
+      // así que sin este chequeo el token de 7 días funcionaba como bearer:
+      // uno robado del navegador valía una semana en vez de 15 minutos.
+      if (payload.typ === 'refresh') {
+        throw new UnauthorizedException('refresh token no válido como access');
+      }
       return {
         sub: payload.sub,
         kind: payload.kind as UserKind,

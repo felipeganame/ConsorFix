@@ -1,11 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
-import { assertTransition, type TicketState } from '@consorciofix/domain';
-import { ticket, ticketEvento } from '../db/schema/index.js';
+import { assertTransition, canResidenteSeeTicket, type TicketState } from '@consorciofix/domain';
+import { ticket, ticketEvento, unidad } from '../db/schema/index.js';
 import type { TxClient } from '../db/client.js';
 import { db, withTenant } from '../db/client.js';
+import { loadResidenteCtx } from '../common/residente-ctx.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+
+/** Quién pide el recurso. Un RESIDENTE queda sujeto a la matriz row-level. */
+export type TicketViewer =
+  | { kind: 'SUPER_ADMIN' | 'ADMIN' }
+  | { kind: 'RESIDENTE'; residenteId: string };
 
 export interface CreateTicketInput {
   consorcioId: string;
@@ -36,6 +42,34 @@ export class TicketsService {
           .where(and(eq(ticket.tenantId, tenantId), eq(ticket.clientGeneratedId, input.clientGeneratedId)))
           .limit(1);
         if (existing[0]) return existing[0];
+      }
+
+      // Pertenencia (RF-H03): el reportante solo puede crear tickets en un
+      // consorcio donde tenga vínculo activo, y la unidad imputada debe
+      // pertenecer a ese consorcio. Sin esto un residente podía crear tickets
+      // —incluso de CONDUCTA— en consorcios ajenos, imputando cualquier unidad.
+      //
+      // Ojo: NO se exige que sea ocupante de `unidadId`. En CONDUCTA la unidad
+      // es justamente la del vecino denunciado, y en infraestructura uno puede
+      // reportar la filtración de otra unidad. El consorcio es el límite real.
+      if (input.reportanteId) {
+        const ctx = await loadResidenteCtx(tx, tenantId, input.reportanteId);
+        if (!ctx.consorcioIds.has(input.consorcioId)) {
+          throw new ForbiddenException('sin vínculo activo en ese consorcio');
+        }
+        if (input.unidadId) {
+          const u = (
+            await tx
+              .select({ consorcioId: unidad.consorcioId })
+              .from(unidad)
+              .where(and(eq(unidad.tenantId, tenantId), eq(unidad.id, input.unidadId)))
+              .limit(1)
+          )[0];
+          if (!u) throw new BadRequestException('unidad inexistente');
+          if (u.consorcioId !== input.consorcioId) {
+            throw new BadRequestException('la unidad no pertenece a ese consorcio');
+          }
+        }
       }
 
       const inserted = await tx
@@ -69,12 +103,37 @@ export class TicketsService {
     });
   }
 
-  async byId(tenantId: string, id: string) {
+  /**
+   * Detalle de un ticket.
+   *
+   * Para un RESIDENTE aplica la misma matriz row-level que el feed
+   * (`canResidenteSeeTicket`) y proyecta el resultado ocultando la identidad
+   * del reportante en tickets de CONDUCTA (RF-F02). Sin esto el endpoint
+   * devolvía la fila cruda a cualquier autenticado: un residente podía leer
+   * cualquier ticket del tenant —incluso de otro consorcio— y, en conducta,
+   * averiguar quién lo denunció.
+   *
+   * Cuando el ticket existe pero no es visible se responde 404 y no 403:
+   * un 403 confirmaría su existencia, que ya es información.
+   */
+  async byId(tenantId: string, id: string, viewer: TicketViewer) {
     return withTenant(tenantId, async (tx) => {
       const rows = await tx.select().from(ticket).where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id))).limit(1);
       const t = rows[0];
       if (!t) throw new NotFoundException('ticket not found');
-      return t;
+
+      if (viewer.kind !== 'RESIDENTE') return t;
+
+      const ctx = await loadResidenteCtx(tx, tenantId, viewer.residenteId);
+      const visible = canResidenteSeeTicket(ctx, {
+        tipo: t.tipo,
+        origen: t.origen,
+        unidadId: t.unidadId,
+        consorcioId: t.consorcioId,
+      });
+      if (!visible) throw new NotFoundException('ticket not found');
+
+      return { ...t, reportanteId: t.tipo === 'CONDUCTA' ? null : t.reportanteId };
     });
   }
 

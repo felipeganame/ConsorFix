@@ -2,7 +2,7 @@ import { Body, Controller, Delete, ForbiddenException, Get, Param, Post, Query, 
 import { z } from 'zod';
 import { Roles } from '../auth/roles.guard.js';
 import type { AuthedRequest } from '../auth/auth.guard.js';
-import { TicketsService } from './tickets.service.js';
+import { TicketsService, type TicketViewer } from './tickets.service.js';
 import { VotosService } from './votos.service.js';
 
 const CreateTicketBody = z.object({
@@ -27,6 +27,13 @@ const ListQuery = z.object({
   consorcio_id: z.string().uuid().optional(),
   estado: z.enum(['REGISTRADO', 'VALIDADO', 'DESCARTADO', 'SOLUCIONADO']).optional(),
 });
+
+function viewer(req: AuthedRequest): TicketViewer {
+  const kind = req.user?.kind;
+  if (kind === 'RESIDENTE') return { kind, residenteId: req.user!.sub };
+  if (kind === 'ADMIN' || kind === 'SUPER_ADMIN') return { kind };
+  throw new ForbiddenException('no user context');
+}
 
 function tid(req: AuthedRequest): string {
   const headerTid = req.headers['x-tenant-id'];
@@ -70,9 +77,15 @@ export class TicketsController {
     });
   }
 
+  /**
+   * El rol se declara explícitamente porque RolesGuard deja pasar a cualquier
+   * autenticado cuando el handler no tiene metadata. La visibilidad fina para
+   * RESIDENTE la resuelve el service con la matriz de `packages/domain`.
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
   @Get(':id')
   async one(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.tickets.byId(tid(req), id);
+    return this.tickets.byId(tid(req), id, viewer(req));
   }
 
   @Roles('SUPER_ADMIN', 'ADMIN')

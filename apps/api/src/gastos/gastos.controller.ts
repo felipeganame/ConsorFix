@@ -2,7 +2,14 @@ import { Body, Controller, ForbiddenException, Get, Param, Post, Req } from '@ne
 import { z } from 'zod';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { Roles } from '../auth/roles.guard.js';
-import { GastosService } from './gastos.service.js';
+import { GastosService, type GastoViewer } from './gastos.service.js';
+
+function viewer(req: AuthedRequest): GastoViewer {
+  const kind = req.user?.kind;
+  if (kind === 'RESIDENTE') return { kind, residenteId: req.user!.sub };
+  if (kind === 'ADMIN' || kind === 'SUPER_ADMIN') return { kind };
+  throw new ForbiddenException('no user context');
+}
 
 const CreateGastoBody = z.object({
   descripcion: z.string().min(1).max(280),
@@ -28,14 +35,20 @@ function tid(req: AuthedRequest): string {
 export class GastosController {
   constructor(private readonly gastos: GastosService) {}
 
+  /**
+   * El rol va explícito: sin metadata, RolesGuard deja pasar a cualquier
+   * autenticado. Para RESIDENTE el service aplica G10 y filtra a CONFIRMADO.
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
   @Get()
   async list(@Req() req: AuthedRequest, @Param('ticketId') ticketId: string) {
-    return this.gastos.list(tid(req), ticketId);
+    return this.gastos.list(tid(req), ticketId, viewer(req));
   }
 
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
   @Get('total')
   async total(@Req() req: AuthedRequest, @Param('ticketId') ticketId: string) {
-    return this.gastos.totalConfirmado(tid(req), ticketId);
+    return this.gastos.totalConfirmado(tid(req), ticketId, viewer(req));
   }
 
   @Roles('SUPER_ADMIN', 'ADMIN')

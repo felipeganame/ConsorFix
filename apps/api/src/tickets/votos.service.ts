@@ -1,8 +1,9 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { canResidenteSeeTicket } from '@consorciofix/domain';
-import { ticket, unidad, vinculoResidente, voto } from '../db/schema/index.js';
+import { ticket, voto } from '../db/schema/index.js';
 import { withTenant } from '../db/client.js';
+import { loadResidenteCtx } from '../common/residente-ctx.js';
 
 @Injectable()
 export class VotosService {
@@ -17,33 +18,21 @@ export class VotosService {
       )[0];
       if (!t) throw new NotFoundException('ticket not found');
 
-      // Vínculos activos del residente.
-      const vinculos = await tx
-        .select()
-        .from(vinculoResidente)
-        .where(
-          and(
-            eq(vinculoResidente.tenantId, tenantId),
-            eq(vinculoResidente.residenteId, residenteId),
-            eq(vinculoResidente.activo, true),
-          ),
-        );
-      const unidadIds = new Set(vinculos.map((v) => v.unidadId));
-
-      // Consorcios donde el residente tiene vínculo (vía sus unidades).
-      let consorcioIds = new Set<string>();
-      if (unidadIds.size > 0) {
-        const unidades = await tx
-          .select({ consorcioId: unidad.consorcioId })
-          .from(unidad)
-          .where(inArray(unidad.id, Array.from(unidadIds)));
-        consorcioIds = new Set(unidades.map((u) => u.consorcioId));
+      // Las conductas no se votan (RF-F02 / P5): son una denuncia entre
+      // vecinos, no un reclamo colectivo que gane prioridad por apoyo. Sin
+      // este chequeo el propio denunciado podía votar la denuncia hecha en su
+      // contra —y de paso quedaba suscripto a sus notificaciones—.
+      if (t.tipo === 'CONDUCTA') {
+        throw new ForbiddenException('los tickets de conducta no se votan');
       }
 
-      const can = canResidenteSeeTicket(
-        { residenteId, consorcioIds, unidadIds },
-        { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, consorcioId: t.consorcioId },
-      );
+      const ctx = await loadResidenteCtx(tx, tenantId, residenteId);
+      const can = canResidenteSeeTicket(ctx, {
+        tipo: t.tipo,
+        origen: t.origen,
+        unidadId: t.unidadId,
+        consorcioId: t.consorcioId,
+      });
       if (!can) throw new ForbiddenException('ticket no visible para votar');
 
       // Idempotente vía UNIQUE(ticket_id, residente_id).
