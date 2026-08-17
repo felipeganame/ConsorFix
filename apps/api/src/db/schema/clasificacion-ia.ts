@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import { jsonb, pgTable, real, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { tenant } from './tenant.js';
 import { ticket } from './ticket.js';

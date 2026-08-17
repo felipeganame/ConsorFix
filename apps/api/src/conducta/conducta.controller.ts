@@ -90,3 +90,33 @@ export class ConductaController {
     return created;
   }
 }
+
+/**
+ * Historial de convivencia por unidad (RF-F03): todos los avisos/sanciones
+ * registrados contra una unidad, a través de cualquier ticket de conducta.
+ * Solo el admin lo consulta (P5). Incluye contexto del ticket para lectura.
+ */
+@Roles('SUPER_ADMIN', 'ADMIN')
+@Controller('unidades/:unidadId/historial-conducta')
+export class HistorialConductaController {
+  @Get()
+  async list(@Req() req: AuthedRequest, @Param('unidadId') unidadId: string) {
+    const t = tid(req);
+    return withTenant(t, async (tx) =>
+      tx
+        .select({
+          id: registroConducta.id,
+          ticketId: registroConducta.ticketId,
+          resultado: registroConducta.resultado,
+          detalle: registroConducta.detalle,
+          createdAt: registroConducta.createdAt,
+          ticketTitulo: ticket.titulo,
+          ticketEstado: ticket.estado,
+        })
+        .from(registroConducta)
+        .innerJoin(ticket, eq(ticket.id, registroConducta.ticketId))
+        .where(and(eq(registroConducta.tenantId, t), eq(registroConducta.unidadId, unidadId)))
+        .orderBy(desc(registroConducta.createdAt)),
+    );
+  }
+}
