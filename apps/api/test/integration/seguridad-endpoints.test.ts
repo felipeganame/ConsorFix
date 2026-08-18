@@ -472,3 +472,73 @@ describe('votos — quitar el voto', () => {
     expect(body.votosCount).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('GET /me/vinculos — a qué consorcios pertenece el residente y en qué condición', () => {
+  let tokenAdmin: string;
+  let uniInactiva: { id: string };
+
+  beforeAll(async () => {
+    const adminRow = (
+      await systemDb
+        .insert(usuarioAdmin)
+        .values({
+          tenantId: ten.id,
+          nombre: `${PREFIX}admin2`,
+          email: `${PREFIX}admin2@test.dev`,
+          passwordHash,
+          rol: 'ADMIN',
+        })
+        .returning()
+    )[0]!;
+    expect(adminRow.id).toBeTruthy();
+    tokenAdmin = (await login(`${PREFIX}admin2@test.dev`)).accessToken;
+
+    // Vínculo inactivo (ex-inquilino que se mudó): no debe aparecer.
+    uniInactiva = (
+      await systemDb
+        .insert(unidad)
+        .values({ tenantId: ten.id, consorcioId: consA.id, etiqueta: `${PREFIX}exUnidad` })
+        .returning()
+    )[0]!;
+    await systemDb.insert(vinculoResidente).values({
+      tenantId: ten.id,
+      residenteId: ocupante.id,
+      unidadId: uniInactiva.id,
+      rol: 'INQUILINO',
+      activo: false,
+    });
+  });
+
+  it('devuelve el vínculo activo del residente con nombre de consorcio y unidad resueltos', async () => {
+    const res = await fetch(`${base}/me/vinculos`, { headers: auth(tokenOcupante) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{
+      rol: string;
+      unidadId: string;
+      unidadEtiqueta: string;
+      consorcioId: string;
+      consorcioNombre: string;
+    }>;
+    const propio = body.find((v) => v.unidadId === uniA.id);
+    expect(propio).toBeDefined();
+    expect(propio!.rol).toBe('PROPIETARIO');
+    expect(propio!.consorcioId).toBe(consA.id);
+    expect(propio!.consorcioNombre).toBe(`${PREFIX}A`);
+  });
+
+  it('no incluye vínculos inactivos', async () => {
+    const res = await fetch(`${base}/me/vinculos`, { headers: auth(tokenOcupante) });
+    const body = (await res.json()) as Array<{ unidadId: string }>;
+    expect(body.some((v) => v.unidadId === uniInactiva.id)).toBe(false);
+  });
+
+  it('rechaza a un ADMIN (endpoint es solo para RESIDENTE)', async () => {
+    const res = await fetch(`${base}/me/vinculos`, { headers: auth(tokenAdmin) });
+    expect(res.status).toBe(403);
+  });
+
+  it('rechaza sin token', async () => {
+    const res = await fetch(`${base}/me/vinculos`);
+    expect(res.status).toBe(401);
+  });
+});

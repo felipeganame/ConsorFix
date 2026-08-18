@@ -14,4 +14,11 @@ export class MeController {
     if (!tid) throw new ForbiddenException('no tenant in token');
     return this.me.listFeed(tid, req.user!.sub);
   }
+
+  @Get('vinculos')
+  async myVinculos(@Req() req: AuthedRequest) {
+    const tid = req.user?.tid;
+    if (!tid) throw new ForbiddenException('no tenant in token');
+    return this.me.listVinculos(tid, req.user!.sub);
+  }
 }

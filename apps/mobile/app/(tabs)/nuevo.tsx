@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Card, CardLabel } from '../../src/components/Card.js';
 import { MobileHeader } from '../../src/components/Header.js';
-import { consorciosDelUsuario, createTicket } from '../../src/lib/api.js';
+import { createTicket, misVinculos, type Vinculo } from '../../src/lib/api.js';
 import { COLORS, RADIUS } from '../../src/lib/colors.js';
 import { enqueue, readQueue, syncQueue, type PendingReport } from '../../src/lib/offline-queue.js';
 
@@ -23,7 +23,7 @@ function uuid(): string {
 
 export default function NuevoScreen(): JSX.Element {
   const router = useRouter();
-  const [consorcios, setConsorcios] = useState<Array<{ id: string }>>([]);
+  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
   const [consorcioId, setConsorcioId] = useState<string>('');
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -53,13 +53,26 @@ export default function NuevoScreen(): JSX.Element {
   }
 
   useEffect(() => {
-    consorciosDelUsuario()
+    misVinculos()
       .then((list) => {
-        setConsorcios(list);
-        if (list[0]) setConsorcioId(list[0].id);
+        setVinculos(list);
+        if (list[0]) setConsorcioId(list[0].consorcioId);
       })
       .catch((e) => setError((e as Error).message));
   }, []);
+
+  const consorcios = useMemo(() => {
+    const byId = new Map(vinculos.map((v) => [v.consorcioId, v.consorcioNombre]));
+    return Array.from(byId, ([id, nombre]) => ({ id, nombre }));
+  }, [vinculos]);
+
+  // Un residente puede tener más de una unidad en el mismo consorcio (poco
+  // común, pero el modelo lo permite); se usa la primera. El origen
+  // (UNIDAD vs ESPACIO_COMUN) lo termina de resolver el admin al validar.
+  const unidadSeleccionada = useMemo(
+    () => vinculos.find((v) => v.consorcioId === consorcioId) ?? null,
+    [vinculos, consorcioId],
+  );
 
   async function onSubmit() {
     if (!consorcioId || !titulo.trim() || !descripcion.trim()) {
@@ -71,7 +84,7 @@ export default function NuevoScreen(): JSX.Element {
     setInfo(null);
     const body = {
       consorcio_id: consorcioId,
-      unidad_id: null,
+      unidad_id: unidadSeleccionada?.unidadId ?? null,
       tipo,
       titulo: titulo.trim().slice(0, 140),
       descripcion: descripcion.trim(),
@@ -156,12 +169,18 @@ export default function NuevoScreen(): JSX.Element {
                   onPress={() => setConsorcioId(c.id)}
                 >
                   <Text style={[styles.consChipText, consorcioId === c.id && styles.consChipTextOn]}>
-                    #{c.id.slice(0, 8)}
+                    {c.nombre}
                   </Text>
                 </Pressable>
               ))}
             </ScrollView>
           </>
+        )}
+
+        {unidadSeleccionada && (
+          <Text style={styles.unidadHint}>
+            Reportás como {unidadSeleccionada.rol === 'PROPIETARIO' ? 'propietario/a' : 'inquilino/a'} de la unidad {unidadSeleccionada.unidadEtiqueta}.
+          </Text>
         )}
 
         <CardLabel>Título</CardLabel>
@@ -248,6 +267,7 @@ const styles = StyleSheet.create({
   consChipOn: { backgroundColor: COLORS.blue700, borderColor: COLORS.blue700 },
   consChipText: { fontSize: 12, color: COLORS.ink, fontFamily: 'Menlo' },
   consChipTextOn: { color: 'white' },
+  unidadHint: { fontSize: 12, color: COLORS.ink3, marginTop: 2, marginBottom: 6 },
   input: {
     backgroundColor: COLORS.surface,
     borderColor: COLORS.line, borderWidth: 1, borderRadius: RADIUS.base,

@@ -1,14 +1,26 @@
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card, CardLabel } from '../../src/components/Card.js';
 import { Chip } from '../../src/components/Chip.js';
 import { MobileHeader } from '../../src/components/Header.js';
 import { useAuth } from '../../src/lib/auth-ctx.js';
+import { misVinculos, type Vinculo } from '../../src/lib/api.js';
 import { COLORS, RADIUS } from '../../src/lib/colors.js';
+
+const ROL_LABEL: Record<Vinculo['rol'], string> = {
+  PROPIETARIO: 'Propietario/a',
+  INQUILINO: 'Inquilino/a',
+};
 
 export default function PerfilScreen(): JSX.Element {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+
+  useEffect(() => {
+    if (user?.kind === 'RESIDENTE') misVinculos().then(setVinculos).catch(() => {});
+  }, [user?.kind]);
 
   async function onLogout() {
     await logout();
@@ -38,6 +50,19 @@ export default function PerfilScreen(): JSX.Element {
           <Row k="Email" v={user?.email ?? '—'} />
           <Row k="Rol" v={user?.kind ?? '—'} />
         </Card>
+
+        {vinculos.length > 0 && (
+          <Card style={styles.section}>
+            <CardLabel>Tus vínculos</CardLabel>
+            {vinculos.map((v) => (
+              <Row
+                key={v.vinculoId}
+                k={v.consorcioNombre}
+                v={`${ROL_LABEL[v.rol]} · ${v.unidadEtiqueta}`}
+              />
+            ))}
+          </Card>
+        )}
 
         <Pressable
           style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.85 }]}

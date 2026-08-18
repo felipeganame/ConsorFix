@@ -1,11 +1,54 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { canResidenteSeeCosto, canResidenteSeeTicket } from '@consorciofix/domain';
-import { gasto, ticket, unidad, vinculoResidente, voto } from '../db/schema/index.js';
+import { consorcio, gasto, ticket, unidad, vinculoResidente, voto } from '../db/schema/index.js';
 import { withTenant } from '../db/client.js';
+
+export interface MiVinculo {
+  vinculoId: string;
+  rol: 'PROPIETARIO' | 'INQUILINO';
+  unidadId: string;
+  unidadEtiqueta: string;
+  consorcioId: string;
+  consorcioNombre: string;
+  consorcioTipo: 'EDIFICIO' | 'BARRIO' | 'OFICINAS';
+}
 
 @Injectable()
 export class MeService {
+  /**
+   * Vínculos activos del residente logueado, con el nombre del consorcio y
+   * la unidad ya resueltos. Es la fuente de verdad para "a qué consorcios
+   * pertenezco y en qué condición" — antes de esto la app mobile lo inferría
+   * de los tickets visibles, así que un residente recién vinculado sin
+   * tickets todavía no podía ni elegir su consorcio para reportar.
+   */
+  async listVinculos(tenantId: string, residenteId: string): Promise<MiVinculo[]> {
+    return withTenant(tenantId, async (tx) => {
+      const rows = await tx
+        .select({
+          vinculoId: vinculoResidente.id,
+          rol: vinculoResidente.rol,
+          unidadId: unidad.id,
+          unidadEtiqueta: unidad.etiqueta,
+          consorcioId: consorcio.id,
+          consorcioNombre: consorcio.nombre,
+          consorcioTipo: consorcio.tipo,
+        })
+        .from(vinculoResidente)
+        .innerJoin(unidad, eq(unidad.id, vinculoResidente.unidadId))
+        .innerJoin(consorcio, eq(consorcio.id, unidad.consorcioId))
+        .where(
+          and(
+            eq(vinculoResidente.tenantId, tenantId),
+            eq(vinculoResidente.residenteId, residenteId),
+            eq(vinculoResidente.activo, true),
+          ),
+        );
+      return rows as MiVinculo[];
+    });
+  }
+
   /**
    * Listado del residente con visibilidad row-level aplicada en JS
    * (la matriz se evalúa con canResidenteSeeTicket de `packages/domain`).

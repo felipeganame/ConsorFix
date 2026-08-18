@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { assertMismoTenant } from '../common/assert-mismo-tenant.js';
@@ -17,6 +17,10 @@ const CreateBody = z.object({
 const ListQuery = z.object({
   unidad_id: z.string().uuid().optional(),
   residente_id: z.string().uuid().optional(),
+});
+
+const UpdateBody = z.object({
+  activo: z.boolean(),
 });
 
 @Roles('SUPER_ADMIN', 'ADMIN')
@@ -49,6 +53,27 @@ export class VinculosController {
           .values({ tenantId: tid, residenteId: dto.residente_id, unidadId: dto.unidad_id, rol: dto.rol })
           .returning()
       )[0];
+    });
+  }
+
+  /**
+   * Desvincular es soft-delete (activo=false), no borrado físico: preserva
+   * quién vivió dónde para auditoría/historial de tickets viejos.
+   */
+  @Patch(':id')
+  async update(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    const dto = UpdateBody.parse(body);
+    const tid = tenantIdFromReq(req);
+    return withTenant(tid, async (tx) => {
+      const row = (
+        await tx
+          .update(vinculoResidente)
+          .set({ activo: dto.activo })
+          .where(and(eq(vinculoResidente.tenantId, tid), eq(vinculoResidente.id, id)))
+          .returning()
+      )[0];
+      if (!row) throw new NotFoundException();
+      return row;
     });
   }
 }

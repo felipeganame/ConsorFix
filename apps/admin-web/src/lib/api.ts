@@ -105,6 +105,16 @@ export interface Residente {
   activo: boolean;
 }
 
+export interface Vinculo {
+  id: string;
+  tenantId: string;
+  residenteId: string;
+  unidadId: string;
+  rol: 'PROPIETARIO' | 'INQUILINO';
+  activo: boolean;
+  createdAt: string;
+}
+
 export type TicketEstado = 'REGISTRADO' | 'VALIDADO' | 'DESCARTADO' | 'SOLUCIONADO';
 export type TicketUrgencia = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA';
 export type TicketOrigen = 'UNIDAD' | 'ESPACIO_COMUN';
@@ -159,6 +169,23 @@ export function createResidente(body: {
   password?: string;
 }): Promise<Residente> {
   return apiFetch<Residente>('/residentes', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function listVinculos(unidadId: string): Promise<Vinculo[]> {
+  return apiFetch<Vinculo[]>(`/vinculos?unidad_id=${encodeURIComponent(unidadId)}`);
+}
+export function createVinculo(body: {
+  residente_id: string;
+  unidad_id: string;
+  rol: 'PROPIETARIO' | 'INQUILINO';
+}): Promise<Vinculo> {
+  return apiFetch<Vinculo>('/vinculos', { method: 'POST', body: JSON.stringify(body) });
+}
+export function desvincular(vinculoId: string): Promise<Vinculo> {
+  return apiFetch<Vinculo>(`/vinculos/${vinculoId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ activo: false }),
+  });
 }
 
 export function listTickets(filters: {

@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -11,13 +11,37 @@ import {
 } from 'react-native';
 import { Chip } from '../../src/components/Chip.js';
 import { MobileHeader } from '../../src/components/Header.js';
-import { listFeed, type FeedTicket } from '../../src/lib/api.js';
+import { listFeed, misVinculos, type FeedTicket, type Vinculo } from '../../src/lib/api.js';
 import {
   COLORS,
   ESTADO_LABEL,
   RADIUS,
   URGENCIA_LABEL,
 } from '../../src/lib/colors.js';
+
+const ROL_LABEL: Record<Vinculo['rol'], string> = {
+  PROPIETARIO: 'Propietario/a',
+  INQUILINO: 'Inquilino/a',
+};
+
+function VinculosBanner({ vinculos }: { vinculos: Vinculo[] }): JSX.Element | null {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed || vinculos.length === 0) return null;
+  return (
+    <View style={styles.vinculosBanner}>
+      <Pressable style={styles.vinculosClose} onPress={() => setDismissed(true)} hitSlop={10}>
+        <Text style={styles.vinculosCloseText}>✕</Text>
+      </Pressable>
+      <Text style={styles.vinculosTitle}>Tu condición en cada consorcio</Text>
+      {vinculos.map((v) => (
+        <Text key={v.vinculoId} style={styles.vinculosLine}>
+          Sos <Text style={styles.vinculosBold}>{ROL_LABEL[v.rol]}</Text> de la unidad{' '}
+          <Text style={styles.vinculosBold}>{v.unidadEtiqueta}</Text> en {v.consorcioNombre}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 const FILTERS: Array<{ key: 'all' | 'COMUN' | 'CONDUCTA'; label: string }> = [
   { key: 'all', label: 'Todos' },
@@ -47,9 +71,14 @@ function relativeTime(iso: string): string {
 export default function FeedScreen(): JSX.Element {
   const router = useRouter();
   const [tickets, setTickets] = useState<FeedTicket[]>([]);
+  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'COMUN' | 'CONDUCTA'>('all');
+
+  useEffect(() => {
+    misVinculos().then(setVinculos).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +103,8 @@ export default function FeedScreen(): JSX.Element {
   return (
     <View style={styles.wrap}>
       <MobileHeader title="Comunidad" subtitle="Lo que pasa en tu edificio" />
+
+      <VinculosBanner vinculos={vinculos} />
 
       <ScrollView
         horizontal
@@ -151,6 +182,16 @@ export default function FeedScreen(): JSX.Element {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: COLORS.bg },
+  vinculosBanner: {
+    marginHorizontal: 14, marginTop: 8, padding: 12, paddingRight: 30,
+    backgroundColor: COLORS.blue50, borderColor: '#cbd9f1', borderWidth: 1,
+    borderRadius: RADIUS.lg, gap: 3,
+  },
+  vinculosClose: { position: 'absolute', top: 8, right: 10, padding: 4 },
+  vinculosCloseText: { color: COLORS.ink3, fontSize: 13 },
+  vinculosTitle: { fontSize: 11.5, fontWeight: '700', color: COLORS.blue700, letterSpacing: 0.3, marginBottom: 2 },
+  vinculosLine: { fontSize: 12.5, color: COLORS.ink2, lineHeight: 17 },
+  vinculosBold: { fontWeight: '700', color: COLORS.ink },
   filters: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 10, gap: 8 },
   filterChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,

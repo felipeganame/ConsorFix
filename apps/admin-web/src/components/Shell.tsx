@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { listConsorcios, type Consorcio } from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 import { Icons } from './Icons.js';
@@ -29,10 +29,26 @@ export function Shell(_props: ShellProps): JSX.Element {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     listConsorcios().then(setConsorcios).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!switcherOpen) return;
+    function onOutside(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false);
+    }
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [switcherOpen]);
+
+  function goToConsorcio(id: string) {
+    setSwitcherOpen(false);
+    nav(`/unidades?consorcio=${id}`);
+  }
 
   const initials = (user?.nombre ?? '?')
     .split(' ')
@@ -60,19 +76,49 @@ export function Shell(_props: ShellProps): JSX.Element {
           </div>
         </div>
 
-        <div className="sidebar-tenant">
-          <div className="sidebar-tenant-icon">
-            <Icons.building size={14} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {firstName}
+        <div ref={switcherRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sidebar-tenant"
+            style={{ width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+            onClick={() => setSwitcherOpen((o) => !o)}
+            disabled={totalConsorcios === 0}
+          >
+            <div className="sidebar-tenant-icon">
+              <Icons.building size={14} />
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>
-              {totalConsorcios === 0 ? 'agregá uno' : totalConsorcios === 1 ? '1 consorcio' : `${totalConsorcios} consorcios`}
+            <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {firstName}
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>
+                {totalConsorcios === 0 ? 'agregá uno' : totalConsorcios === 1 ? '1 consorcio' : `${totalConsorcios} consorcios`}
+              </div>
             </div>
-          </div>
-          <Icons.chevDown size={14} stroke="var(--cf-ink-3)" />
+            <Icons.chevDown size={14} stroke="var(--cf-ink-3)" />
+          </button>
+
+          {switcherOpen && (
+            <div
+              className="card"
+              style={{
+                position: 'absolute', top: '100%', left: 14, right: 14, marginTop: 4,
+                padding: 6, zIndex: 20, maxHeight: 260, overflowY: 'auto',
+              }}
+            >
+              {consorcios.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="btn ghost sm"
+                  style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
+                  onClick={() => goToConsorcio(c.id)}
+                >
+                  {c.nombre}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <nav className="sidebar-nav">

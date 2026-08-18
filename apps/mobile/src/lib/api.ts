@@ -108,12 +108,28 @@ export interface Consorcio {
   tipo: 'EDIFICIO' | 'BARRIO' | 'OFICINAS';
 }
 
-// /me/tickets includes consorcio ids; we don't have an endpoint for residente
-// to list their consorcios directly. Derive from feed for the New report screen.
-export async function consorciosDelUsuario(): Promise<Array<{ id: string }>> {
-  const feed = await listFeed();
-  const ids = new Set(feed.map((t) => t.consorcioId));
-  return Array.from(ids).map((id) => ({ id }));
+export interface Vinculo {
+  vinculoId: string;
+  rol: 'PROPIETARIO' | 'INQUILINO';
+  unidadId: string;
+  unidadEtiqueta: string;
+  consorcioId: string;
+  consorcioNombre: string;
+  consorcioTipo: 'EDIFICIO' | 'BARRIO' | 'OFICINAS';
+}
+
+export function misVinculos(): Promise<Vinculo[]> {
+  return apiFetch<Vinculo[]>('/me/vinculos');
+}
+
+// Consorcios a los que pertenece el residente, según sus vínculos activos
+// (no según los tickets que puede ver). Antes se derivaba de listFeed(), lo
+// que dejaba sin opción de reportar a un residente recién vinculado a un
+// consorcio todavía sin tickets.
+export async function consorciosDelUsuario(): Promise<Array<{ id: string; nombre: string }>> {
+  const vinculos = await misVinculos();
+  const byId = new Map(vinculos.map((v) => [v.consorcioId, v.consorcioNombre]));
+  return Array.from(byId, ([id, nombre]) => ({ id, nombre }));
 }
 
 export interface CreateTicketBody {
