@@ -22,9 +22,15 @@ export class MockClassifier implements IClassifier {
           ? 'electricidad'
           : /ascensor/.test(lower)
             ? 'ascensor'
-            : /ruido|ruidos/.test(lower)
-              ? 'ruidos'
-              : 'otros';
+            : /ruido|ruidos|molest|vecin/.test(lower)
+              ? // 'conducta', no 'ruidos': esta última no está en el vocabulario
+                // del prompt, así que ningún proveedor real podría devolverla.
+                'conducta'
+              : /basura|suciedad|limpiez/.test(lower)
+                ? 'limpieza'
+                : /robo|inseguridad|portón|porton|reja|camara|cámara/.test(lower)
+                  ? 'seguridad'
+                  : 'otros';
     const origen =
       /palier|cochera|sum|hall|escaler|pasillo|comun|jardin|parrilla|pileta|piscina/.test(lower)
         ? 'ESPACIO_COMUN'

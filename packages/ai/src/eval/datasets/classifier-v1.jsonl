@@ -1,0 +1,302 @@
+{"id":"plo001","text":"Se rompió un caño en el palier del cuarto piso y está saliendo agua a chorros","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo002","text":"Hay una pérdida de agua abajo de la pileta de la cocina, gotea despacio","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo003","text":"No tenemos agua en todo el edificio desde esta mañana","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo004","text":"Se tapó el inodoro del departamento y desborda cada vez que tiro la cadena","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo005","text":"La canilla del baño gotea, nada urgente pero molesta de noche","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo006","text":"Está entrando agua por el techo de la cochera cuando llueve fuerte","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo007","text":"Se inundó todo el subsuelo, el agua ya llega a las rodillas","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo008","text":"La bomba de agua del tanque hace un ruido raro y no levanta presión en los pisos altos","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo009","text":"Tengo una mancha de humedad en la pared del dormitorio que va creciendo","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo010","text":"Se desbordó la rejilla del lavadero comun y hay agua servida en el pasillo","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo011","text":"El termotanque no calienta el agua, nos bañamos con agua fría hace tres días","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo012","text":"Hay olor a cloaca fuerte en el hall de entrada","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo013","text":"Se filtra agua del departamento de arriba y me está manchando el cielorraso","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo014","text":"La ducha pierde un poquito por la unión, gotea cada tanto","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo015","text":"Reventó un caño maestro en la vereda y el agua sale a presión","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo016","text":"El desagüe de la terraza está tapado con hojas y se junta agua","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo017","text":"No baja el agua del tanque al departamento, tenemos presión cero","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo018","text":"Se cayó un pedazo del revoque del techo del baño por la humedad","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo019","text":"Hay agua saliendo del medidor en el pasillo del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo020","text":"La rejilla del patio interno está floja, la pisás y se mueve","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"plo021","text":"Se tapó el sifón de la cocina y el agua no baja","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo022","text":"El caño del gas está flojo y se siente olor en la cocina","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo023","text":"Pérdida de gas en el pasillo del quinto, se siente el olor apenas salís del ascensor","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo024","text":"El calefón se apaga solo cada vez que abro la ducha","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo025","text":"Está saliendo agua marrón de todas las canillas del edificio","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo026","text":"La bacha del lavadero pierde por la rejilla, junta agua abajo del mueble","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo027","text":"Se rompió la cañería del riego del jardín y hay un charco enorme","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo028","text":"Hay una gotera en el techo del SUM que cae justo sobre las mesas","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo029","text":"El tanque de agua está desbordando y cae por la fachada","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo030","text":"Quiero avisar que la junta de la bañadera está negra y habría que resellarla","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"plo031","text":"El inodoro pierde agua permanentemente por el tanque, se escucha todo el día","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo032","text":"Se cortó el agua caliente central de todo el edificio","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo033","text":"Hay una filtración que está mojando el tablero eléctrico del pasillo","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo034","text":"El cesto de la pileta de natación pierde agua y baja el nivel","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo035","text":"Se rompió el flexible del lavarropas y se me inundó la cocina","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele001","text":"Se cortó la luz en todo el edificio y no volvió","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele002","text":"Hay un cable pelado colgando en el pasillo del segundo piso","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele003","text":"Se quemó la lamparita del palier del tercero","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"ele004","text":"Saltó la térmica del departamento y no puedo volver a subirla","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele005","text":"Hay olor a quemado cerca del tablero general del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele006","text":"Las luces del pasillo titilan todo el tiempo","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele007","text":"Me dio un chispazo el enchufe de la cocina cuando enchufé la pava","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele008","text":"No anda la luz de emergencia de la escalera","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele009","text":"El portero eléctrico no suena en mi departamento","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele010","text":"Se cortó la luz solo en mi departamento, el resto del edificio tiene","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele011","text":"La luz del jardín quedó prendida las 24 horas, no se apaga sola","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"ele012","text":"Hay una toma suelta en la pared de la cochera con los cables a la vista","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele013","text":"El disyuntor salta cada vez que prendo el aire acondicionado","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele014","text":"Quedó todo el sector de cocheras sin iluminación, de noche no se ve nada","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele015","text":"El timbre del edificio no funciona desde el fin de semana","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele016","text":"Hay chispas saliendo del tablero del palier","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele017","text":"La luz del baño parpadea cuando prendo el extractor","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele018","text":"Se cortó la luz del hall y el portón eléctrico quedó sin funcionar","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele019","text":"Habría que cambiar los tubos fluorescentes del pasillo, dan poca luz","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"ele020","text":"Se siente un zumbido fuerte en el medidor de mi departamento","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele021","text":"Cortocircuito en la bomba, saltó todo y quedamos sin agua ni luz en el subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele022","text":"El foco de la escalera de emergencia está quemado hace semanas","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele023","text":"No tengo luz en la mitad del departamento, la otra mitad anda bien","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele024","text":"El cargador del auto eléctrico de la cochera no está dando corriente","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele025","text":"Se ve un cable del tendido colgando bajo sobre el patio, cualquiera lo toca","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"asc001","text":"El ascensor está trabado entre el cuarto y el quinto con gente adentro","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"asc002","text":"El ascensor no funciona desde ayer a la tarde","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc003","text":"La puerta del ascensor cierra muy fuerte y golpea","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"asc004","text":"El ascensor pasa de largo el piso y no frena donde uno lo llama","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc005","text":"Se quemó la luz de la cabina del ascensor, se viaja a oscuras","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"asc006","text":"El botón del séptimo piso no responde en el ascensor","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"asc007","text":"El ascensor hace un ruido metálico muy fuerte al arrancar","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc008","text":"Quedó gente encerrada en el ascensor y el teléfono de emergencia no anda","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"asc009","text":"El ascensor frena un escalón más abajo del piso y hay que subir","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"asc010","text":"El espejo de la cabina del ascensor está rajado","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"asc011","text":"El montacargas de servicio está fuera de servicio hace una semana","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc012","text":"La puerta del ascensor no abre en planta baja, hay que forzarla","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc013","text":"Falta el certificado de mantenimiento del ascensor en la cabina","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"asc014","text":"El ascensor tiembla mucho cuando sube del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc015","text":"El piso de goma del ascensor está despegado y la gente se tropieza","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim001","text":"Hace tres días que no limpian el pasillo del segundo piso","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim002","text":"Los containers de basura están desbordados y hay bolsas en el piso","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim003","text":"Hay olor nauseabundo en el cuarto de residuos, no se puede pasar","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"lim004","text":"Quedaron restos de comida en la parrilla del SUM después del evento","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim005","text":"Hay cucarachas en el sector de contenedores","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"lim006","text":"Los vidrios del hall están sucios y llenos de marcas de manos","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim007","text":"Alguien dejó muebles viejos tirados en el pasillo del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim008","text":"Hay excremento de perro en el ascensor y nadie lo limpió","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim009","text":"La pileta está verde, hace rato que no le hacen mantenimiento","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim010","text":"Vi ratas en el jardín, cerca de donde juegan los chicos","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"lim011","text":"El pasto del frente está altísimo, hace un mes que no lo cortan","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim012","text":"Hay hormigas por todos lados en la cocina del SUM","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim013","text":"Quedó la escalera con manchas de pintura del arreglo anterior","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim014","text":"El agua estancada del patio tiene mosquitos, hay riesgo de dengue","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"lim015","text":"Hay palomas anidando en el tanque y está lleno de suciedad","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim016","text":"El piso del gimnasio está pegajoso, no lo limpian nunca","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim017","text":"Se acumuló polvo y telarañas en la sala de máquinas","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim018","text":"Encontramos una pérdida de residuos líquidos del contenedor por todo el piso","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg001","text":"El portón de la cochera quedó abierto toda la noche","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg002","text":"Entraron a robar a una cochera, forzaron el auto del lote 12","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"seg003","text":"La cámara del hall está desconectada hace semanas","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg004","text":"La cerradura de la puerta de entrada no traba, cualquiera empuja y entra","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg005","text":"Hay una persona extraña durmiendo en el hall desde anoche","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg006","text":"Se rompió el vidrio de la puerta de entrada, quedó el hueco abierto","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg007","text":"El matafuegos del quinto piso está vencido","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg008","text":"No anda el sistema de alarma de incendio, no suena cuando lo prueban","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"seg009","text":"La reja del jardín tiene un barrote flojo, se puede pasar","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg010","text":"Perdí la llave del palier y me preocupa que alguien la haya encontrado","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg011","text":"La puerta de emergencia de la escalera está trabada con un candado","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"seg012","text":"El portero no está en su puesto y la puerta quedó sin llave","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg013","text":"Se cayó una maceta grande del balcón del octavo a la vereda","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"seg014","text":"La baranda del balcón de mi departamento está floja","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"seg015","text":"El escalón de la escalera del segundo está roto, ya se tropezó gente","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg016","text":"El control remoto del portón se lo robaron a un vecino y no lo dieron de baja","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg017","text":"Habría que poner más iluminación en el sendero del fondo, está muy oscuro","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg018","text":"La cerradura de mi departamento quedó floja después de que forzaran la puerta","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"con001","text":"El del 5B pone música a todo volumen a las tres de la mañana","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con002","text":"Los perros del 4C ladran todo el día cuando los dejan solos","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con003","text":"El vecino del 2A estaciona en mi cochera cuando llega tarde","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con004","text":"Tiran colillas de cigarrillo desde el balcón y caen en el patio","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con005","text":"Hicieron una fiesta hasta las seis de la mañana en el departamento de arriba","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con006","text":"El del 3D no levanta la caca del perro en el jardín","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con007","text":"Dejan la basura afuera del contenedor en el pasillo del sexto","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con008","text":"Se escuchan gritos y golpes en el departamento de al lado","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"con009","text":"El del 7A usa la parrilla del SUM sin reservar y deja todo sucio","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con010","text":"Un vecino me amenazó en el ascensor por reclamarle el ruido","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"con011","text":"Están haciendo obra sin permiso en el 6B, martillan desde las siete","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con012","text":"El inquilino del 1C alquila por Airbnb y entra gente distinta cada finde","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con013","text":"Fuman en el ascensor y queda el olor toda la tarde","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con014","text":"El del 8B tira agua del balcón cuando riega y moja la ropa de abajo","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con015","text":"Los del 2B dejan la puerta del palier trabada para que entren los repartidores","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con016","text":"El vecino del 9A puso un aire acondicionado que gotea sobre mi ventana","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con017","text":"Hay olor a marihuana constante que viene del departamento de al lado","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con018","text":"El del 4A dejó el auto tapando la salida de la cochera","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con019","text":"Los chicos del 3B juegan a la pelota en el pasillo y golpean las puertas","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con020","text":"El vecino guarda bidones de nafta en su baulera","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"con021","text":"Arrastran muebles de noche arriba mío, se escucha todo","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con022","text":"El del 5C tiene un perro peligroso suelto en el jardín","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"con023","text":"Un vecino sacó las plantas del hall común y se las llevó","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con024","text":"El del 6A guarda la bicicleta en el palier y no se puede pasar","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con025","text":"Los del 7C dejaron la canilla del lavadero común abierta toda la noche","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con026","text":"El vecino de abajo golpea el techo cada vez que camino","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con027","text":"Están tirando escombros de la refacción por el conducto de basura","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con028","text":"El del 1B insulta al portero cada vez que lo cruza","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con029","text":"Dejan el carrito del supermercado abandonado en la entrada todas las semanas","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con030","text":"El del 10A tiene una pileta inflable en el balcón, tengo miedo del peso","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"otr001","text":"Se despintó la pared del hall de entrada","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr002","text":"La calefacción central no está calentando lo suficiente","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr003","text":"Se rompió el vidrio de la ventana de mi living con el viento","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr004","text":"La manija de la puerta del SUM está floja","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr005","text":"Se cayó una rama grande del árbol del jardín","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr006","text":"La puerta del palier no cierra bien, hay que empujarla fuerte","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr007","text":"Se descosió el toldo de la terraza","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr008","text":"Hay una grieta grande en la columna del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"otr009","text":"La cortina del living no corre bien por el riel","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr010","text":"El buzón de correspondencia está roto y se caen las cartas","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr011","text":"Se despegaron varias baldosas del piso del hall","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr012","text":"La ventana del baño no cierra y entra frío","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr013","text":"El cielorraso del pasillo tiene una parte hundida","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"otr014","text":"Habría que repintar las líneas de las cocheras, ya no se ven","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr015","text":"La reja del balcón está oxidada y se ve fea","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr016","text":"Se salió la puerta del placard empotrado del dormitorio","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr017","text":"El pasamanos de la escalera está flojo en el tramo del tercero","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"otr018","text":"Se rompió la máquina de ejercicios del gimnasio","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr019","text":"El aire acondicionado del SUM tira aire caliente","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr020","text":"Hay una filtración estructural en la losa que ya deformó la viga","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"tono001","text":"URGENTÍSIMO!!! SE QUEMÓ UNA LAMPARITA DEL PASILLO, ES UNA VERGÜENZA","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono002","text":"buenas, aviso que se siente olor a gas en el pasillo, cuando puedan lo ven, gracias","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono003","text":"EMERGENCIA TOTAL, LA PARED DEL SUM ESTÁ DESPINTADA HACE MESES Y NADIE HACE NADA","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono004","text":"nada importante, pero hay un cable pelado en el palier por las dudas aviso","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono005","text":"POR FAVOR VENGAN YA!!! el pasto está un poco largo","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono006","text":"disculpen la molestia, se cayó gente por el escalón roto de la escalera, ya van dos","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono007","text":"ESTO ES INADMISIBLE, HACE DOS DÍAS QUE NO LIMPIAN EL PALIER, PIENSO DENUNCIARLOS","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono008","text":"che una consulta, el ascensor quedó trabado con mi mamá adentro, avisen al service","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono009","text":"NO DOY MÁS, el espejo del ascensor tiene una rayita","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono010","text":"si pueden pasar en la semana: hay una grieta que atraviesa la columna del subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono011","text":"ES UN DESASTRE, UNA CATÁSTROFE, el buzón de cartas está flojo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono012","text":"nada grave, se está inundando el subsuelo y el agua ya tapa los medidores","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono013","text":"URGENTE URGENTE la canilla del baño gotea una gota cada tanto","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono014","text":"cuando tengan un ratito: la alarma de incendios no funciona en ningún piso","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono015","text":"ME VOY A IR DEL EDIFICIO SI NO LO ARREGLAN, la puerta del SUM chirría","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono016","text":"buen día, sin apuro, me dio una descarga el enchufe de la cocina esta mañana","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono017","text":"HACE 40 MINUTOS QUE ESPERO, el ascensor tarda mucho en las horas pico","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono018","text":"anoto para cuando puedan: la baranda del balcón se movió y está por soltarse","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"tono019","text":"NECESITO QUE VENGAN AHORA MISMO, quiero saber cuándo pintan el pasillo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic","tags":["tono-inflado"]}
+{"id":"tono020","text":"consulta menor, quedó la puerta de emergencia clausurada con candado","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic","tags":["tono-atenuado"]}
+{"id":"amb001","text":"Se llovió el techo","expected":{"categoria":"plomeria"},"source":"synthetic","tags":["ambiguo","origen-indeterminado"]}
+{"id":"amb002","text":"No anda la luz","expected":{"categoria":"electricidad"},"source":"synthetic","tags":["ambiguo","origen-indeterminado"]}
+{"id":"amb003","text":"Hay un problema con el agua","expected":{"categoria":"plomeria"},"source":"synthetic","tags":["ambiguo"]}
+{"id":"amb004","text":"Está todo sucio","expected":{"categoria":"limpieza"},"source":"synthetic","tags":["ambiguo"]}
+{"id":"amb005","text":"El vecino hace ruido","expected":{"categoria":"conducta","origen":"UNIDAD"},"source":"synthetic","tags":["ambiguo"]}
+{"id":"amb006","text":"Se rompió el ascensor","expected":{"categoria":"ascensor","origen":"ESPACIO_COMUN"},"source":"synthetic","tags":["ambiguo"]}
+{"id":"amb007","text":"hola","expected":{"categoria":"otros"},"source":"synthetic","tags":["ambiguo","sin-contenido"]}
+{"id":"amb008","text":"necesito ayuda con un tema del departamento","expected":{"categoria":"otros"},"source":"synthetic","tags":["ambiguo","sin-contenido"]}
+{"id":"mul001","text":"Se cortó la luz del palier y además el ascensor quedó parado","expected":{"origen":"ESPACIO_COMUN","urgencia":"ALTA"},"source":"synthetic","tags":["multi-problema"]}
+{"id":"mul002","text":"Hay una pérdida de agua que está mojando el tablero eléctrico del pasillo","expected":{"origen":"ESPACIO_COMUN","urgencia":"CRITICA"},"source":"synthetic","tags":["multi-problema"]}
+{"id":"mul003","text":"El del 3B hace ruido y además dejó basura en el pasillo","expected":{"origen":"UNIDAD","categoria":"conducta"},"source":"synthetic","tags":["multi-problema"]}
+{"id":"reg001","text":"Che, se me tapó la pileta de la cocina, un desastre. Podés mandar al plomero?","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic","tags":["registro-informal"]}
+{"id":"reg002","text":"Estimada administración: por medio de la presente informo la rotura del artefacto lumínico del sector palier","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic","tags":["registro-formal"]}
+{"id":"reg003","text":"buenas! el asensor no anda, gracias!!","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic","tags":["registro-informal","typo"]}
+{"id":"reg004","text":"ola kiero reportar q se rompio el caño del baño","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic","tags":["registro-informal","typo"]}
+{"id":"reg005","text":"Buenas tardes. Solicito la reparación de la cerradura del acceso principal, que no traba correctamente","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic","tags":["registro-formal"]}
+{"id":"reg006","text":"holaaaa se corto la luz de todo el edificioooo ayuda","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic","tags":["registro-informal"]}
+{"id":"plo036","text":"El caño de desagüe de la cocina del 4to gotea sobre la cochera","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo037","text":"Sale agua por debajo de la puerta del departamento del 2A y llega al pasillo","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo038","text":"El filtro del tanque está sucio y el agua sale con partículas","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo039","text":"Se congeló el caño exterior y no llega agua al lote 8","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo040","text":"La bomba de la pileta hace ruido pero no mueve el agua","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo041","text":"Hay humedad de cimientos en toda la pared del pasillo de planta baja","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo042","text":"El bidet perdió la conexión y tiré el agua a la pared","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"plo043","text":"Cloacas desbordadas en el patio, sale materia fecal","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"plo044","text":"La presión de agua bajó en todos los pisos altos desde ayer","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"plo045","text":"Falta cambiar el flotante del tanque, hace tiempo lo venimos avisando","expected":{"origen":"ESPACIO_COMUN","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele026","text":"Se cortó la energía del portón y quedamos encerrados en la cochera","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele027","text":"El tablero del quinto hace un ruido de chisporroteo constante","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele028","text":"Una lámpara del hall parpadea, la otra anda bien","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"ele029","text":"El motor del portón eléctrico quedó sin corriente","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele030","text":"Se quemó el transformador del sector B, no hay luz en cinco lotes","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele031","text":"Tengo la instalación del departamento sin puesta a tierra","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele032","text":"El sensor de movimiento de la luz del pasillo no detecta nada","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"ele033","text":"Se derritió el enchufe del pasillo por sobrecarga","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"ele034","text":"Quedaron cables sueltos después del arreglo del electricista","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"ele035","text":"La luz del cartel de salida de emergencia está apagada","expected":{"origen":"ESPACIO_COMUN","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"asc016","text":"El ascensor abre las puertas entre pisos","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"asc017","text":"El display del ascensor no muestra el piso","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"asc018","text":"El ascensor baja más rápido de lo normal, da miedo","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"asc019","text":"El ascensor de servicio no llega al subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"asc020","text":"Se traba la puerta del ascensor y hay que darle un golpe","expected":{"origen":"ESPACIO_COMUN","categoria":"ascensor","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"lim019","text":"Nadie barrió la vereda esta semana","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"lim020","text":"El conducto de basura huele muy fuerte en todos los pisos","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim021","text":"Hay una plaga de mosquitos en el sector de la pileta","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim022","text":"Quedaron bolsas de escombro en el hall hace una semana","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"lim023","text":"Encontré un nido de avispas en el alero de la entrada","expected":{"origen":"ESPACIO_COMUN","categoria":"limpieza","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg019","text":"El lector de tarjetas del acceso no reconoce ninguna credencial","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg020","text":"Vi a alguien saltando la reja del fondo anoche","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg021","text":"La barrera de la entrada quedó levantada y no baja","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"seg022","text":"Falta señalización de salida de emergencia en el subsuelo","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"seg023","text":"El detector de humo del pasillo está tapado con cinta","expected":{"origen":"ESPACIO_COMUN","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"con031","text":"El del 6C dejó el auto con la alarma sonando toda la noche","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con032","text":"Los del 2D usan el palier como depósito de cajas","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"con033","text":"El vecino del lote 5 quema hojas en el jardín y entra humo a mi casa","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"con034","text":"Se pasan de largo el horario de la pileta todos los días","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con035","text":"El del 8A cuelga ropa en el balcón sobre la fachada, está prohibido","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"con036","text":"Un vecino golpeó a otro en la asamblea, hubo que separarlos","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"con037","text":"El del 3A dejó abierta la puerta del SUM y entraron desconocidos","expected":{"origen":"UNIDAD","categoria":"conducta","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"otr021","text":"Se descalibró el portón, cierra a mitad de camino","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr022","text":"La caldera central está haciendo un ruido nuevo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr023","text":"Se rompió el vidrio del SUM con la pelota de los chicos","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr024","text":"Falta cambiar la arena del arenero de la plaza interna","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr025","text":"El mástil de la bandera está torcido","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"otr026","text":"La puerta corrediza del balcón se salió del riel y no cierra","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"otr027","text":"Se hundió parte del piso de la cochera, quedó un pozo","expected":{"origen":"ESPACIO_COMUN","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni001","text":"No me calienta la estufa del living, hace dos semanas","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni002","text":"Se me quemó el toma corriente del dormitorio, quedó negro","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni003","text":"Tengo la persiana del living trabada, no sube ni baja","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni004","text":"El extractor del baño de mi departamento dejó de andar","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni005","text":"Se descolgó el mueble bajo mesada de la cocina","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni006","text":"Tengo hongos en el techo del baño por falta de ventilación","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni007","text":"La puerta de entrada de mi departamento no cierra con llave","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni008","text":"Se rompió el vidrio del ventiluz del baño","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni009","text":"Mi departamento se quedó sin gas, la hornalla no prende","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni010","text":"El piso flotante del dormitorio se levantó por la humedad","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni011","text":"Se cayó una parte del cielorraso del living encima del sillón","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni012","text":"Hay olor a quemado que sale del tablero de mi departamento","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni013","text":"El aire acondicionado del cuarto pierde agua hacia adentro","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni014","text":"Tengo la reja de la ventana floja, se puede sacar de afuera","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni015","text":"El picaporte del dormitorio se salió, quedé encerrado un rato","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni016","text":"Se descascaró la pintura del pasillo interno de mi depto","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni017","text":"Entra agua por el marco de la ventana cuando llueve de costado","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni018","text":"El calefactor tira olor a gas cuando lo prendo","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni019","text":"Se me quemaron todas las lamparitas del departamento al mismo tiempo","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni020","text":"La bacha del baño está flojo el desagüe y pierde por abajo","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni021","text":"Tengo el balcón con una rajadura en el piso","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni022","text":"No funciona el interruptor de la luz del pasillo de mi departamento","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni023","text":"Se tapó el desagüe de la ducha, el agua queda estancada","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni024","text":"La puerta del balcón perdió el burlete y entra viento","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni025","text":"Se salió el vidrio de la mampara de la ducha","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni026","text":"Tengo una fuga de gas en la conexión de la cocina, cerré la llave de paso","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni027","text":"El lavarropas no desagota, se queda con agua","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni028","text":"El timbre de mi puerta suena solo a cualquier hora","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni029","text":"Se rompió la traba de seguridad de la ventana del cuarto de los chicos","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni030","text":"El termotanque tiene una pérdida por la base, hay agua en el piso","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni031","text":"Las juntas de los azulejos de la cocina están sueltas","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni032","text":"No tengo señal de portero visor en el departamento","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni033","text":"Se cortó la luz en mi lote nada más, los vecinos tienen","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni034","text":"Tengo una gotera arriba de la cama desde la lluvia del sábado","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni035","text":"Se despegó el zócalo del living","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni036","text":"La cerradura de mi baulera fue violentada, falta una bicicleta","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni037","text":"Mi cochera quedó sin luz, la lámpara no prende","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni038","text":"Se está pelando la pared del dormitorio por humedad de la medianera","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni039","text":"El horno de la cocina no enciende, el gas llega pero no prende","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni040","text":"Se trabó el portón de mi cochera individual y no puedo sacar el auto","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni041","text":"Hay una chispa cada vez que enchufo algo en el toma del living","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni042","text":"Se rompió el flotante del inodoro y corre agua todo el día","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni043","text":"Falta sellar la ventana del baño, quiero pedir presupuesto","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni044","text":"El detector de humo de mi departamento pita sin parar","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni045","text":"Tengo el tablero eléctrico sin tapa, los cables quedan expuestos","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni046","text":"Se cayó el toallero de la pared del baño","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni047","text":"La caldera individual de mi unidad no arranca","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni048","text":"Hay una mancha de humedad en el placard que ya llegó a la ropa","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni049","text":"El vidrio de mi ventana quedó rajado después de la tormenta","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni050","text":"No sale agua caliente en el baño pero sí en la cocina","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni051","text":"Se quemó el motor del ventilador de techo","expected":{"origen":"UNIDAD","categoria":"electricidad","urgencia":"BAJA"},"source":"synthetic"}
+{"id":"uni052","text":"Tengo la llave de paso del agua trabada, no la puedo cerrar","expected":{"origen":"UNIDAD","categoria":"plomeria","urgencia":"ALTA"},"source":"synthetic"}
+{"id":"uni053","text":"El piso del balcón está flojo, se siente que se hunde al pisar","expected":{"origen":"UNIDAD","categoria":"seguridad","urgencia":"CRITICA"},"source":"synthetic"}
+{"id":"uni054","text":"Se cortó la conexión de internet del edificio a mi unidad","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"MEDIA"},"source":"synthetic"}
+{"id":"uni055","text":"Quiero avisar que cambié la cerradura de mi departamento","expected":{"origen":"UNIDAD","categoria":"otros","urgencia":"BAJA"},"source":"synthetic"}
