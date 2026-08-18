@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,7 +15,7 @@ import { Card, CardLabel } from '../../src/components/Card.js';
 import { MobileHeader } from '../../src/components/Header.js';
 import { createTicket, misVinculos, type Vinculo } from '../../src/lib/api.js';
 import { COLORS, RADIUS } from '../../src/lib/colors.js';
-import { enqueue, readQueue, syncQueue, type PendingReport } from '../../src/lib/offline-queue.js';
+import { descartar, enqueue, readQueue, syncQueue, type PendingReport } from '../../src/lib/offline-queue.js';
 
 function uuid(): string {
   const rand = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
@@ -33,23 +34,53 @@ export default function NuevoScreen(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingReport[]>([]);
 
-  useEffect(() => {
-    readQueue().then(setPending);
-  }, []);
+  // La pantalla prometía "se enviará cuando vuelva la red" y no había nada que
+  // lo hiciera: `syncQueue` solo corría si el vecino apretaba el botón. Ahora se
+  // intenta al abrir la pantalla y cada vez que la app vuelve al frente, que es
+  // cuando en la práctica se recuperó la señal. Se hace con `AppState`, que ya
+  // viene en react-native, en vez de sumar netinfo como dependencia: escuchar la
+  // conectividad de verdad es mejor, pero no puedo probarlo sin un dispositivo y
+  // prefiero algo que sé que funciona a algo que parece funcionar.
+  const [sincronizando, setSincronizando] = useState(false);
 
-  async function onSync() {
-    setBusy(true);
-    setError(null);
-    setInfo(null);
+  const sincronizar = useCallback(async (silencioso: boolean) => {
+    const cola = await readQueue();
+    const hayQueIntentar = cola.some((i) => !i.rechazadoDefinitivamente);
+    if (!hayQueIntentar) {
+      setPending(cola);
+      if (!silencioso) setInfo('No hay nada pendiente de enviar.');
+      return;
+    }
+    setSincronizando(true);
     try {
       const r = await syncQueue();
       setPending(await readQueue());
-      setInfo(`Sincronizadas ${r.synced}, fallaron ${r.failed}, quedan ${r.remaining}.`);
+      if (!silencioso || r.enviados > 0) {
+        setInfo(
+          r.enviados > 0
+            ? `Se enviaron ${r.enviados} reporte${r.enviados === 1 ? '' : 's'}.` +
+                (r.pendientes > 0 ? ` Quedan ${r.pendientes}.` : '')
+            : `No se pudo enviar todavía. Quedan ${r.pendientes} en espera.`,
+        );
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (!silencioso) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      setSincronizando(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void sincronizar(true);
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') void sincronizar(true);
+    });
+    return () => sub.remove();
+  }, [sincronizar]);
+
+  async function onDescartar(id: string) {
+    await descartar(id);
+    setPending(await readQueue());
   }
 
   useEffect(() => {
@@ -73,6 +104,9 @@ export default function NuevoScreen(): JSX.Element {
     () => vinculos.find((v) => v.consorcioId === consorcioId) ?? null,
     [vinculos, consorcioId],
   );
+
+  const enEspera = useMemo(() => pending.filter((p) => !p.rechazadoDefinitivamente), [pending]);
+  const rechazados = useMemo(() => pending.filter((p) => p.rechazadoDefinitivamente), [pending]);
 
   async function onSubmit() {
     if (!consorcioId || !titulo.trim() || !descripcion.trim()) {
@@ -212,14 +246,33 @@ export default function NuevoScreen(): JSX.Element {
           </View>
         )}
 
-        {pending.length > 0 && (
+        {enEspera.length > 0 && (
           <View style={styles.pendingBox}>
-            <Text style={styles.pendingTitle}>{pending.length} reporte{pending.length === 1 ? '' : 's'} pendiente{pending.length === 1 ? '' : 's'} de sincronizar</Text>
-            <Pressable onPress={onSync} disabled={busy} style={({ pressed }) => [styles.syncBtn, pressed && { opacity: 0.7 }]}>
-              <Text style={styles.syncBtnText}>Reintentar ahora</Text>
+            <Text style={styles.pendingTitle}>
+              {enEspera.length} reporte{enEspera.length === 1 ? '' : 's'} esperando conexión. Se
+              {enEspera.length === 1 ? ' va' : ' van'} a enviar solo{enEspera.length === 1 ? '' : 's'}.
+            </Text>
+            <Pressable
+              onPress={() => void sincronizar(false)}
+              disabled={sincronizando}
+              style={({ pressed }) => [styles.syncBtn, (pressed || sincronizando) && { opacity: 0.7 }]}
+            >
+              <Text style={styles.syncBtnText}>{sincronizando ? 'Enviando…' : 'Enviar ahora'}</Text>
             </Pressable>
           </View>
         )}
+
+        {/* Rechazados: no se reintentan más y no se borran solos. El vecino
+            escribió ese texto; que desaparezca sin decirle nada es peor. */}
+        {rechazados.map((r) => (
+          <View key={r.id} style={styles.rejectedBox}>
+            <Text style={styles.rejectedTitle}>No se pudo registrar “{r.body.titulo}”</Text>
+            <Text style={styles.rejectedReason}>{r.lastError ?? 'La administración lo rechazó.'}</Text>
+            <Pressable onPress={() => void onDescartar(r.id)} style={({ pressed }) => [styles.discardBtn, pressed && { opacity: 0.7 }]}>
+              <Text style={styles.discardText}>Descartar</Text>
+            </Pressable>
+          </View>
+        ))}
 
         {info && <Text style={styles.info}>{info}</Text>}
         {error && <Text style={styles.error}>{error}</Text>}
@@ -300,6 +353,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.blue700,
   },
   syncBtnText: { color: 'white', fontWeight: '600', fontSize: 12 },
+  rejectedBox: {
+    backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1,
+    padding: 12, borderRadius: 10, marginTop: 10,
+  },
+  rejectedTitle: { color: '#991b1b', fontSize: 12.5, fontWeight: '700' },
+  rejectedReason: { color: '#b91c1c', fontSize: 12, marginTop: 3 },
+  discardBtn: { alignSelf: 'flex-start', marginTop: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#fecaca' },
+  discardText: { color: '#991b1b', fontWeight: '600', fontSize: 12 },
   button: {
     backgroundColor: COLORS.blue700, paddingVertical: 14,
     borderRadius: RADIUS.base, alignItems: 'center', marginTop: 16,
