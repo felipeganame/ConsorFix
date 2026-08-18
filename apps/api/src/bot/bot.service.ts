@@ -419,6 +419,7 @@ export class BotService {
         confianza: classified.confianza,
         modelo: classified.modelo,
         promptVersion: classified.prompt_version,
+        ...(classified.uso ? { uso: classified.uso } : {}),
       },
     });
     await this.guardarMedia(resi.tenantId, t.id, mediaPendiente);
@@ -529,6 +530,14 @@ export class BotService {
       confianza: number;
       modelo: string;
       promptVersion: string;
+      /** Telemetría de costo (RF-C07). La devuelve el propio SDK. */
+      uso?: {
+        tokensIn?: number;
+        tokensOut?: number;
+        costoUsd?: number;
+        latenciaMs?: number;
+        cacheHit?: boolean;
+      };
     };
   }) {
     const vecLit = input.embedding.length > 0 ? `[${input.embedding.join(',')}]` : null;
@@ -555,6 +564,7 @@ export class BotService {
       // No rompe la creación del ticket si falla: la sugerencia es telemetría,
       // no parte del contrato con el residente.
       try {
+        const uso = input.clasificacion.uso;
         await systemDb.insert(clasificacionIa).values({
           tenantId: input.tenantId,
           ticketId: inserted.id,
@@ -562,6 +572,12 @@ export class BotService {
           confianza: input.clasificacion.confianza,
           modelo: input.clasificacion.modelo,
           promptVersion: input.clasificacion.promptVersion,
+          ...(uso?.tokensIn !== undefined && { tokensIn: uso.tokensIn }),
+          ...(uso?.tokensOut !== undefined && { tokensOut: uso.tokensOut }),
+          // numeric() en drizzle espera string para no perder precisión.
+          ...(uso?.costoUsd !== undefined && { costoUsd: uso.costoUsd.toFixed(6) }),
+          ...(uso?.latenciaMs !== undefined && { latenciaMs: uso.latenciaMs }),
+          ...(uso?.cacheHit !== undefined && { cacheHit: uso.cacheHit }),
         });
       } catch (err) {
         this.log.error(

@@ -7,6 +7,7 @@ import type { LanguageModel } from 'ai';
 import type { IClassifier } from './ports.js';
 import { CLASSIFIER_PROMPT_VERSION, CLASSIFIER_SYSTEM } from './prompts/classifier-v1.js';
 import { ClassifierModelOutput, ClassifierOutput } from './schemas.js';
+import { calcularCosto } from './pricing.js';
 
 /**
  * Clasificador sobre Vercel AI SDK — una sola implementación para los tres
@@ -69,7 +70,7 @@ export class SdkClassifier implements IClassifier {
     this.model = resolveModel(provider, apiKey, this.modelId);
   }
 
-  async classify(text: string, opts: { promptVersion: string }): Promise<ClassifierOutput> {
+  async classify(text: string, opts: { promptVersion: string }) {
     const schema: z.ZodType<ClassifierModelOutput> = ClassifierModelOutput;
 
     // El cast es deliberado y está acotado a esta llamada: los genéricos de
@@ -81,7 +82,8 @@ export class SdkClassifier implements IClassifier {
       args: Record<string, unknown>,
     ) => Promise<{ object: unknown; usage?: { inputTokens?: number; outputTokens?: number } }>;
 
-    const { object } = await generate({
+    const t0 = Date.now();
+    const { object, usage } = await generate({
       model: this.model,
       schema,
       system: CLASSIFIER_SYSTEM,
@@ -92,10 +94,28 @@ export class SdkClassifier implements IClassifier {
       maxRetries: Number(process.env.AI_MAX_RETRIES ?? 2),
     });
 
-    return ClassifierOutput.parse({
+    const latenciaMs = Date.now() - t0;
+    const parsed = ClassifierOutput.parse({
       ...(object as Record<string, unknown>),
       modelo: this.modelId,
       prompt_version: opts.promptVersion || CLASSIFIER_PROMPT_VERSION,
     });
+
+    // RF-C07: el uso ya viene en la respuesta del SDK; antes se descartaba.
+    const tokensIn = usage?.inputTokens;
+    const tokensOut = usage?.outputTokens;
+    return {
+      ...parsed,
+      uso: {
+        ...(tokensIn !== undefined && { tokensIn }),
+        ...(tokensOut !== undefined && { tokensOut }),
+        ...(() => {
+          const costoUsd = calcularCosto(this.modelId, tokensIn, tokensOut);
+          return costoUsd !== undefined ? { costoUsd } : {};
+        })(),
+        latenciaMs,
+        cacheHit: false,
+      },
+    };
   }
 }
