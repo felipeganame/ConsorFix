@@ -4,14 +4,20 @@ import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
   createGasto,
+  createRegistroConducta,
   getHistorial,
+  historialConducta,
   getTicket,
   listCategorias,
   listGastos,
+  listRegistrosConducta,
   listUnidades,
   totalGastos,
   transitionTicket,
   type Categoria,
+  type EventoConvivencia,
+  type RegistroConducta,
+  type ResultadoConducta,
   type Gasto,
   type HistorialEvento,
   type Ticket,
@@ -71,6 +77,14 @@ export function TicketDetailPage(): JSX.Element {
   const [gComprobante, setGComprobante] = useState('');
   const [gEstado, setGEstado] = useState<'BORRADOR' | 'CONFIRMADO'>('CONFIRMADO');
 
+  // Convivencia (RF-F03): avisos y sanciones del reporte, y el historial de la
+  // unidad señalada. Los endpoints existían y no había ninguna pantalla, así que
+  // el circuito de conducta terminaba en "validado" y no se podía cerrar.
+  const [registros, setRegistros] = useState<RegistroConducta[]>([]);
+  const [convivencia, setConvivencia] = useState<EventoConvivencia[]>([]);
+  const [rcResultado, setRcResultado] = useState<ResultadoConducta>('AVISO');
+  const [rcDetalle, setRcDetalle] = useState('');
+
   const refresh = useCallback(async () => {
     if (!id) return;
     try {
@@ -92,6 +106,27 @@ export function TicketDetailPage(): JSX.Element {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const refreshConducta = useCallback(async () => {
+    if (!id || !ticket || ticket.tipo !== 'CONDUCTA') return;
+    try {
+      const regs = await listRegistrosConducta(id);
+      setRegistros(regs);
+      // El historial es de la unidad señalada; sin ella todavía no hay a quién
+      // mirarle los antecedentes.
+      if (ticket.unidadReportadaId) {
+        setConvivencia(await historialConducta(ticket.unidadReportadaId));
+      } else {
+        setConvivencia([]);
+      }
+    } catch {
+      // No se corta la pantalla por esto: el resto del ticket se lee igual.
+    }
+  }, [id, ticket]);
+
+  useEffect(() => {
+    void refreshConducta();
+  }, [refreshConducta]);
 
   // Unidades y categorías del consorcio del ticket: se necesitan para validar.
   // Sin la lista de unidades no se puede elegir la unidad señalada en una
@@ -130,6 +165,25 @@ export function TicketDetailPage(): JSX.Element {
       setTicket(next);
       setShowValidar(false);
       setNota('');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRegistrarConducta(e: FormEvent) {
+    e.preventDefault();
+    if (!ticket) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createRegistroConducta(ticket.id, {
+        resultado: rcResultado,
+        ...(rcDetalle && { detalle: rcDetalle }),
+      });
+      setRcDetalle('');
+      await refreshConducta();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -521,6 +575,94 @@ export function TicketDetailPage(): JSX.Element {
                 cuando el ticket es de espacio común.
               </div>
             </div>
+
+            {/* Convivencia (RF-F03). Cierra el circuito de una conducta: el
+                admin habla con las partes y deja asentado en qué terminó. Queda
+                registrado contra la unidad SEÑALADA y va a la bitácora. */}
+            {esConducta && (
+              <div className="card">
+                <div className="row-between" style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Avisos y sanciones</div>
+                  {ticket.unidadReportadaId && (
+                    <span className="muted small">
+                      unidad {etiquetaDe(ticket.unidadReportadaId)} · {convivencia.length} en su historial
+                    </span>
+                  )}
+                </div>
+
+                {!ticket.unidadReportadaId ? (
+                  <div className="muted small">
+                    Validá el ticket indicando la unidad señalada para poder registrar el resultado.
+                  </div>
+                ) : (
+                  <>
+                    {/* Los antecedentes van arriba de la decisión: saber que es la
+                        cuarta vez cambia si corresponde un aviso o una sanción. */}
+                    {convivencia.length > 0 && (
+                      <div className="card tight" style={{ marginBottom: 12 }}>
+                        <div className="uppercase">Antecedentes de la unidad</div>
+                        {convivencia.map((ev) => (
+                          <div key={ev.id} className="row-between" style={{ paddingTop: 6 }}>
+                            <span className="small">
+                              <span className={`chip ${ev.resultado === 'SANCION' ? 'crit' : ev.resultado === 'AVISO' ? 'med' : ''}`}>
+                                {ev.resultado.toLowerCase()}
+                              </span>{' '}
+                              {ev.ticketId === ticket.id ? 'este reporte' : ev.ticketTitulo}
+                            </span>
+                            <span className="muted small">{shortDate(ev.createdAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <form className="form-grid card tight" onSubmit={onRegistrarConducta}>
+                      <label>
+                        <span>En qué terminó</span>
+                        <select value={rcResultado} onChange={(e) => setRcResultado(e.target.value as ResultadoConducta)}>
+                          <option value="AVISO">Aviso a la unidad</option>
+                          <option value="SANCION">Sanción registrada</option>
+                          <option value="DESCARTADO">Se descartó el reporte</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Detalle</span>
+                        <textarea
+                          rows={2}
+                          value={rcDetalle}
+                          onChange={(e) => setRcDetalle(e.target.value)}
+                          maxLength={2000}
+                          placeholder="Qué se le dijo, con quién se habló"
+                        />
+                      </label>
+                      <button type="submit" className="btn primary" disabled={busy}>
+                        Registrar
+                      </button>
+                    </form>
+
+                    {registros.length > 0 && (
+                      <table className="grid mt-3">
+                        <thead>
+                          <tr><th>Resultado</th><th>Detalle</th><th style={{ width: 150 }}>Fecha</th></tr>
+                        </thead>
+                        <tbody>
+                          {registros.map((r) => (
+                            <tr key={r.id}>
+                              <td>
+                                <span className={`chip ${r.resultado === 'SANCION' ? 'crit' : r.resultado === 'AVISO' ? 'med' : ''}`}>
+                                  {r.resultado.toLowerCase()}
+                                </span>
+                              </td>
+                              <td>{r.detalle ?? <span className="muted">—</span>}</td>
+                              <td className="muted small">{shortDate(r.createdAt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Historial auditable (RF-D02). El endpoint existía y ninguna
                 pantalla lo llamaba, así que no había forma de ver quién movió

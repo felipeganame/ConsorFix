@@ -375,6 +375,86 @@ describe('conducta: anonimato del reportante', () => {
     const res = await api('POST', `/tickets/${tConducta}/votes`, 'prop1a');
     expect(res.status).toBe(403);
   });
+
+  it('la sanción se registra contra la unidad SEÑALADA, no contra la del denunciante', async () => {
+    // El defecto: el registro se escribía contra `unidad_id`, y en un ticket
+    // creado por el bot ese campo es la unidad de QUIEN DENUNCIA —el bot imputa
+    // la unidad del que escribe—. Así que un aviso o una sanción le ensuciaba el
+    // historial de convivencia al vecino que reportó.
+    //
+    // El ticket se arma igual que el del bot: `unidad_id` = 2B (el denunciante,
+    // vec2b) y la unidad señalada al validar = 1A. Con los dos campos distintos
+    // el test distingue de verdad; si `unidad_id` ya fuera la acusada, pasaría
+    // también con el código viejo.
+    const r = await api('POST', '/tickets', 'vec2b', {
+      consorcio_id: c1.id,
+      unidad_id: u2b.id,
+      tipo: 'CONDUCTA',
+      titulo: 'Ruidos, reportado desde el 2B',
+      descripcion: 'la del 1A pone música de madrugada',
+    });
+    const idConducta = r.body.id;
+    await api('POST', `/tickets/${idConducta}/transitions`, 'adminA', {
+      to: 'VALIDADO',
+      origen: 'UNIDAD',
+      unidad_reportada_id: u1a.id,
+    });
+
+    const res = await api('POST', `/tickets/${idConducta}/registros-conducta`, 'adminA', {
+      resultado: 'SANCION',
+      detalle: 'segunda vez en el mes',
+    });
+    expect(res.status).toBeLessThan(300);
+    expect(res.body.unidadId).toBe(u1a.id);
+    expect(res.body.unidadId).not.toBe(u2b.id);
+
+    // Aparece en el historial de convivencia de la unidad señalada...
+    const hist = await api('GET', `/unidades/${u1a.id}/historial-conducta`, 'adminA');
+    expect(hist.status).toBe(200);
+    expect(hist.body.some((h: { ticketId: string }) => h.ticketId === idConducta)).toBe(true);
+
+    // ...y NO en el del denunciante, que es el punto del arreglo.
+    const otro = await api('GET', `/unidades/${u2b.id}/historial-conducta`, 'adminA');
+    expect(otro.body.some((h: { ticketId: string }) => h.ticketId === idConducta)).toBe(false);
+  });
+
+  it('no se puede sancionar una conducta sin unidad señalada', async () => {
+    const r = await api('POST', '/tickets', 'vec2b', {
+      consorcio_id: c1.id,
+      unidad_id: u2b.id,
+      tipo: 'CONDUCTA',
+      titulo: 'Sin señalar',
+      descripcion: 'x',
+    });
+    const res = await api('POST', `/tickets/${r.body.id}/registros-conducta`, 'adminA', {
+      resultado: 'AVISO',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('no se puede sancionar un ticket de infraestructura', async () => {
+    const r = await api('POST', '/tickets', 'adminA', {
+      consorcio_id: c1.id,
+      unidad_id: null,
+      tipo: 'INFRAESTRUCTURA',
+      titulo: 'No es conducta',
+      descripcion: 'x',
+    });
+    const res = await api('POST', `/tickets/${r.body.id}/registros-conducta`, 'adminA', {
+      resultado: 'SANCION',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('el historial de convivencia no lo ve un residente', async () => {
+    const res = await api('GET', `/unidades/${u1a.id}/historial-conducta`, 'prop1a');
+    expect(res.status).toBe(403);
+  });
+
+  it('el historial de convivencia no cruza administraciones', async () => {
+    const res = await api('GET', `/unidades/${u1a.id}/historial-conducta`, 'adminB');
+    expect(res.status === 200 ? res.body.length : 0).toBe(0);
+  });
 });
 
 describe('invitación de inquilino (solo el propietario de esa unidad)', () => {

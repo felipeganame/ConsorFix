@@ -514,3 +514,54 @@ export function createTenant(body: {
 }): Promise<{ id: string; nombre: string; admin: { id: string; email: string } }> {
   return apiFetch('/tenants', { method: 'POST', body: JSON.stringify(body) });
 }
+
+// ── Convivencia: avisos y sanciones (RF-F03) ─────────────────────────────────
+
+export type ResultadoConducta = 'DESCARTADO' | 'AVISO' | 'SANCION';
+
+export interface RegistroConducta {
+  id: string;
+  tenantId: string;
+  unidadId: string;
+  ticketId: string;
+  resultado: ResultadoConducta;
+  detalle: string | null;
+  createdAt: string;
+}
+
+export function listRegistrosConducta(ticketId: string): Promise<RegistroConducta[]> {
+  return apiFetch<RegistroConducta[]>(`/tickets/${ticketId}/registros-conducta`);
+}
+
+/**
+ * Registra el resultado del reporte de conducta. Queda asentado contra la unidad
+ * SEÑALADA en el ticket, no contra la del denunciante, y va a la bitácora.
+ */
+export function createRegistroConducta(
+  ticketId: string,
+  body: { resultado: ResultadoConducta; detalle?: string },
+): Promise<RegistroConducta> {
+  return apiFetch<RegistroConducta>(`/tickets/${ticketId}/registros-conducta`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export interface EventoConvivencia {
+  id: string;
+  ticketId: string;
+  resultado: ResultadoConducta;
+  detalle: string | null;
+  createdAt: string;
+  ticketTitulo: string;
+  ticketEstado: TicketEstado;
+}
+
+/**
+ * Historial de convivencia de una unidad: todos los avisos y sanciones que se le
+ * registraron, a través de cualquier ticket de conducta. Es lo que permite ver
+ * que es la cuarta vez, no la primera. Solo lo consulta la administración (P5).
+ */
+export function historialConducta(unidadId: string): Promise<EventoConvivencia[]> {
+  return apiFetch<EventoConvivencia[]>(`/unidades/${unidadId}/historial-conducta`);
+}
