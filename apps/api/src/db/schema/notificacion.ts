@@ -15,6 +15,9 @@ export const notificacion = pgTable('notificacion', {
   intentos: integer('intentos').notNull().default(0),
   providerMessageId: text('provider_message_id'),
   error: text('error'),
+  // Reintentos durables (migración 0007).
+  proximoIntentoAt: timestamp('proximo_intento_at', { withTimezone: true }),
+  ultimoIntentoAt: timestamp('ultimo_intento_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -11,6 +11,7 @@ import {
   residente,
   tenant as tenantTable,
   ticket,
+  notificacion,
   unidad,
   usuarioAdmin,
   vinculoResidente,
@@ -260,3 +261,104 @@ describe('RF-A05 — importación masiva de residentes', () => {
 });
 
 void ticket;
+
+describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
+  it('el reaper reintenta lo que quedó colgado y respeta el backoff', async () => {
+    const { NotificationsService } = await import('../../src/notifications/notifications.service.js');
+    const svc = new NotificationsService();
+
+    const uni = (
+      await systemDb
+        .select({ id: unidad.id })
+        .from(unidad)
+        .where(and(eq(unidad.tenantId, ten.id), eq(unidad.consorcioId, cons.id)))
+        .limit(1)
+    )[0]!;
+    const resi = (
+      await systemDb
+        .insert(residente)
+        .values({
+          tenantId: ten.id,
+          nombre: `${PREFIX}notif`,
+          telefonoE164: `+549${String(Date.now() + 7).slice(-9)}`,
+        })
+        .returning()
+    )[0]!;
+    await systemDb.insert(vinculoResidente).values({
+      tenantId: ten.id, residenteId: resi.id, unidadId: uni.id, rol: 'PROPIETARIO', activo: true,
+    });
+    const tk = (
+      await systemDb
+        .insert(ticket)
+        .values({
+          tenantId: ten.id, consorcioId: cons.id, unidadId: uni.id, reportanteId: resi.id,
+          tipo: 'INFRAESTRUCTURA', origen: 'ESPACIO_COMUN', urgencia: 'MEDIA', estado: 'VALIDADO',
+          titulo: `${PREFIX}notif`, descripcionNormalizada: 'x',
+        })
+        .returning()
+    )[0]!;
+
+    // Una notificación que quedó PENDIENTE, como si el proceso hubiera muerto
+    // en medio del envío. Antes del reaper esto se quedaba así para siempre.
+    const n = (
+      await systemDb
+        .insert(notificacion)
+        .values({
+          tenantId: ten.id, ticketId: tk.id, destinatarioId: resi.id,
+          destinatarioTipo: 'RESIDENTE', canal: 'WHATSAPP',
+          plantilla: 'ticket_actualizacion', estado: 'PENDIENTE',
+        })
+        .returning()
+    )[0]!;
+
+    const r1 = await svc.reintentarPendientes(10);
+    expect(r1.reintentadas).toBeGreaterThanOrEqual(1);
+
+    const post = (
+      await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id))
+    )[0]!;
+    expect(post.intentos).toBe(1);
+    expect(post.proximoIntentoAt).not.toBeNull();
+    // El backoff se agenda al futuro: una segunda pasada no la vuelve a tomar.
+    expect(post.proximoIntentoAt!.getTime()).toBeGreaterThan(Date.now());
+
+    const r2 = await svc.reintentarPendientes(10);
+    const tomadaDeNuevo = r2.reintentadas > 0;
+    if (tomadaDeNuevo) {
+      const post2 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
+      expect(post2.intentos).toBe(1); // no fue esta la que se volvió a tomar
+    }
+
+    svc.onModuleDestroy();
+  });
+
+  it('la ventana de 24 h se abre con el inbound y no antes', async () => {
+    const { NotificationsService } = await import('../../src/notifications/notifications.service.js');
+    const svc = new NotificationsService();
+    const resi = (
+      await systemDb
+        .insert(residente)
+        .values({
+          tenantId: ten.id,
+          nombre: `${PREFIX}ventana`,
+          telefonoE164: `+549${String(Date.now() + 11).slice(-9)}`,
+        })
+        .returning()
+    )[0]!;
+
+    // Sin inbound registrado: fuera de la ventana, hay que usar plantilla.
+    expect(await svc.dentroDeVentana24h(resi.id)).toBe(false);
+
+    await svc.registrarInbound(resi.id);
+    expect(await svc.dentroDeVentana24h(resi.id)).toBe(true);
+
+    // Un inbound de hace 25 horas ya no cuenta.
+    await systemDb
+      .update(residente)
+      .set({ ultimoInboundAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(residente.id, resi.id));
+    expect(await svc.dentroDeVentana24h(resi.id)).toBe(false);
+
+    svc.onModuleDestroy();
+  });
+});

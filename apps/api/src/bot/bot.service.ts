@@ -99,6 +99,7 @@ export class BotService {
       const vinculo = await this.resolverTelegram(inbound);
       if (vinculo.kind === 'pending-link') return { status: vinculo.status };
       if (vinculo.kind === 'linked') {
+        await this.registrarInbound(vinculo.residente.id);
         return this.continuar(inbound, vinculo.residente);
       }
     }
@@ -123,6 +124,9 @@ export class BotService {
       await this.markWebhookProcessed(inbound.wamid);
       return { status: 'ambiguous-tenant' };
     }
+    // RF-G02: registrar el inbound abre la ventana de 24 h para poder
+    // responderle con texto libre en vez de una plantilla aprobada.
+    await this.registrarInbound(lookup.residente.id);
     return this.continuar(inbound, lookup.residente);
   }
 
@@ -663,6 +667,19 @@ export class BotService {
       inbound,
     );
     return { status: 'comando-estado' };
+  }
+
+  /** Marca el último inbound del residente; define la ventana de 24 h (RF-G02). */
+  private async registrarInbound(residenteId: string): Promise<void> {
+    try {
+      await systemDb
+        .update(residente)
+        .set({ ultimoInboundAt: new Date() })
+        .where(eq(residente.id, residenteId));
+    } catch (err) {
+      // No es motivo para no atender el reporte.
+      this.log.warn({ err: (err as Error).message }, 'no se pudo registrar el inbound');
+    }
   }
 
   /**
