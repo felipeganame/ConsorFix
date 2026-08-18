@@ -50,20 +50,32 @@ export class ConsorciosController {
     return row[0];
   }
 
+  /**
+   * El `if (!row)` no es decorativo: el WHERE ya acota por `tenant_id`, así que
+   * editar un consorcio de otra administración no toca ninguna fila —pero sin
+   * este chequeo el UPDATE de 0 filas devolvía 200 con body vacío y el panel
+   * mostraba "guardado" sin haber guardado nada. Mismo criterio que
+   * `vinculos.update`. Verificado en runtime: AdminB hacía PATCH sobre un
+   * consorcio de AdminA y recibía 200.
+   */
   @Patch(':id')
   async update(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
     const dto = UpdateBody.parse(body);
     const tid = tenantIdFromReq(req);
-    return withTenant(tid, async (tx) =>
-      (await tx
-        .update(consorcio)
-        .set({
-          ...(dto.nombre !== undefined && { nombre: dto.nombre }),
-          ...(dto.direccion !== undefined && { direccion: dto.direccion }),
-          ...(dto.archivado !== undefined && { archivado: dto.archivado }),
-        })
-        .where(and(eq(consorcio.tenantId, tid), eq(consorcio.id, id)))
-        .returning())[0],
-    );
+    return withTenant(tid, async (tx) => {
+      const row = (
+        await tx
+          .update(consorcio)
+          .set({
+            ...(dto.nombre !== undefined && { nombre: dto.nombre }),
+            ...(dto.direccion !== undefined && { direccion: dto.direccion }),
+            ...(dto.archivado !== undefined && { archivado: dto.archivado }),
+          })
+          .where(and(eq(consorcio.tenantId, tid), eq(consorcio.id, id)))
+          .returning()
+      )[0];
+      if (!row) throw new NotFoundException();
+      return row;
+    });
   }
 }

@@ -87,11 +87,30 @@ export function canResidenteSeeTicket(
  *
  * Presupuestos/borradores no se consideran acá: el caller debe filtrar por
  * gasto.estado = CONFIRMADO antes de exponer montos.
+ *
+ * Los costos de una unidad NO son públicos, pero sí son visibles para los
+ * ocupantes de ESA unidad: son quienes pagan la reparación de su propio
+ * departamento. Hasta 2026-08-18 esta función devolvía `false` para todo lo que
+ * no fuera ESPACIO_COMUN, así que el propietario del 1A reportaba una pérdida
+ * en su baño, el admin cargaba la factura del plomero, y el propietario recibía
+ * un 404 al pedir el monto: la app no tenía forma de mostrarle lo que debía.
+ * G10 existe para que el costo privado no se filtre al *resto* del consorcio,
+ * no para ocultárselo al afectado.
  */
 export function canResidenteSeeCosto(
   user: ResidenteCtx,
   ticket: TicketVisibilityCtx,
 ): boolean {
   if (!canResidenteSeeTicket(user, ticket)) return false;
-  return ticket.tipo === 'INFRAESTRUCTURA' && ticket.origen === 'ESPACIO_COMUN';
+  // CONDUCTA: el costo de una sanción o de un arreglo por daños queda solo para
+  // el admin. Publicárselo al denunciado o al denunciante convierte el monto en
+  // parte del conflicto entre vecinos (G11).
+  if (ticket.tipo !== 'INFRAESTRUCTURA') return false;
+  // Espacio común: transparencia total, es la propuesta de valor (G10).
+  if (ticket.origen === 'ESPACIO_COMUN') return true;
+  // UNIDAD (y origen todavía sin validar, que se trata como UNIDAD por defecto
+  // seguro): solo ocupantes de la unidad afectada. Ojo, no alcanza con ser el
+  // reportante: un vecino puede reportar la filtración del 1A y no por eso ve
+  // la factura del 1A.
+  return ticket.unidadId !== null && user.unidadIds.has(ticket.unidadId);
 }
