@@ -11,6 +11,7 @@ import {
 import { createWhatsAppProvider, type InboundMessage } from '@consorciofix/messaging';
 import { systemDb } from '../db/client.js';
 import {
+  clasificacionIa,
   consorcio,
   residente,
   ticket,
@@ -215,6 +216,19 @@ export class BotService {
       titulo: inputs.classifiedTitulo,
       descripcion: inputs.classifiedDescripcion,
       embedding: inputs.embedding,
+      clasificacion: {
+        sugerido: {
+          titulo: inputs.classifiedTitulo,
+          descripcion_normalizada: inputs.classifiedDescripcion,
+          categoria: inputs.classifiedCategoria,
+          origen: inputs.classifiedOrigen,
+          urgencia: inputs.classifiedUrgencia,
+          ...(inputs.classifiedUbicacion !== undefined && { ubicacion: inputs.classifiedUbicacion }),
+        },
+        confianza: inputs.classifiedConfianza,
+        modelo: inputs.classifiedModelo,
+        promptVersion: inputs.classifiedPromptVersion,
+      },
     });
     await this.reply(
       inbound.from,
@@ -269,6 +283,10 @@ export class BotService {
               classifiedCategoria: classified.categoria,
               classifiedOrigen: classified.origen,
               classifiedUrgencia: classified.urgencia,
+              classifiedConfianza: classified.confianza,
+              classifiedModelo: classified.modelo,
+              classifiedPromptVersion: classified.prompt_version,
+              ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
               embedding,
             },
           });
@@ -295,6 +313,12 @@ export class BotService {
       titulo: classified.titulo,
       descripcion: classified.descripcion_normalizada,
       embedding,
+      clasificacion: {
+        sugerido: classified as unknown as Record<string, unknown>,
+        confianza: classified.confianza,
+        modelo: classified.modelo,
+        promptVersion: classified.prompt_version,
+      },
     });
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
@@ -365,6 +389,18 @@ export class BotService {
     titulo: string;
     descripcion: string;
     embedding: number[];
+    /**
+     * Sugerencia del clasificador. Regla 4 de CLAUDE.md: toda salida de la IA
+     * se persiste como sugerencia, y las correcciones del admin se registran
+     * aparte para alimentar el dataset. Hasta ahora estos datos se descartaban
+     * en el call site y `clasificacion_ia` quedaba vacía.
+     */
+    clasificacion?: {
+      sugerido: Record<string, unknown>;
+      confianza: number;
+      modelo: string;
+      promptVersion: string;
+    };
   }) {
     const vecLit = input.embedding.length > 0 ? `[${input.embedding.join(',')}]` : null;
     const inserted = (
@@ -385,6 +421,27 @@ export class BotService {
         })
         .returning()
     )[0]!;
+
+    if (input.clasificacion) {
+      // No rompe la creación del ticket si falla: la sugerencia es telemetría,
+      // no parte del contrato con el residente.
+      try {
+        await systemDb.insert(clasificacionIa).values({
+          tenantId: input.tenantId,
+          ticketId: inserted.id,
+          sugerido: input.clasificacion.sugerido,
+          confianza: input.clasificacion.confianza,
+          modelo: input.clasificacion.modelo,
+          promptVersion: input.clasificacion.promptVersion,
+        });
+      } catch (err) {
+        this.log.error(
+          { err: (err as Error).message, ticketId: inserted.id },
+          'no se pudo persistir clasificacion_ia',
+        );
+      }
+    }
+
     await systemDb.insert(ticketEvento).values({
       tenantId: input.tenantId,
       ticketId: inserted.id,

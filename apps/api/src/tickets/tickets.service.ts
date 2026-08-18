@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { assertTransition, canResidenteSeeTicket, type TicketState } from '@consorciofix/domain';
-import { ticket, ticketEvento, unidad } from '../db/schema/index.js';
+import { clasificacionIa, ticket, ticketEvento, unidad } from '../db/schema/index.js';
 import type { TxClient } from '../db/client.js';
 import { db, withTenant } from '../db/client.js';
 import { loadResidenteCtx } from '../common/residente-ctx.js';
@@ -176,6 +176,31 @@ export class TicketsService {
         .where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id)))
         .returning())[0]!;
       await this.recordEvent(tx, tenantId, id, `${t.estado}->${to}`, t.estado, to, adminId, 'ADMIN', opts.nota ?? null);
+
+      // RF-C04: registrar qué corrigió el admin sobre la sugerencia de la IA.
+      // Es la mitad que faltaba del dataset — sin el par sugerido/corregido no
+      // hay forma de medir el clasificador contra casos reales (G16), ni de
+      // sostener el principio "la IA sugiere, el admin decide" (regla 4).
+      // Solo se escribe cuando efectivamente hubo un cambio.
+      if (to === 'VALIDADO') {
+        const correccion: Record<string, unknown> = {};
+        if (opts.origen && opts.origen !== t.origen) {
+          correccion['origen'] = { sugerido: t.origen, final: opts.origen };
+        }
+        if (opts.categoriaId && opts.categoriaId !== t.categoriaId) {
+          correccion['categoriaId'] = { sugerido: t.categoriaId, final: opts.categoriaId };
+        }
+        if (Object.keys(correccion).length > 0) {
+          await tx
+            .update(clasificacionIa)
+            .set({
+              corregidoPorAdmin: { ...correccion, adminId, at: new Date().toISOString() },
+              updatedAt: new Date(),
+            })
+            .where(and(eq(clasificacionIa.tenantId, tenantId), eq(clasificacionIa.ticketId, id)));
+        }
+      }
+
       return next;
     });
 

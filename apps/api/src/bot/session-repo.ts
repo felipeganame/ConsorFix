@@ -26,6 +26,13 @@ export interface SessionState {
     classifiedCategoria: string;
     classifiedOrigen: 'UNIDAD' | 'ESPACIO_COMUN';
     classifiedUrgencia: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA';
+    // Metadatos del clasificador. Van en la sesión porque el ticket de la rama
+    // "no es duplicado" se crea en otro request, y sin esto esa rama quedaba
+    // sin registro en `clasificacion_ia` — un agujero silencioso en el dataset.
+    classifiedConfianza: number;
+    classifiedModelo: string;
+    classifiedPromptVersion: string;
+    classifiedUbicacion?: string;
     embedding: number[];
   };
 }
