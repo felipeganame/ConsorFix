@@ -237,6 +237,35 @@ describe('RF-A05 — importación masiva de residentes', () => {
     expect(cargados.length).toBe(3);
   });
 
+  it('la prueba no cuenta dos veces la misma unidad nueva', async () => {
+    // Dos ocupantes de la MISMA unidad que no existe: la unidad a crear es una,
+    // no dos. Antes la prueba la contaba por fila, así que una planilla con
+    // propietario + inquilino por unidad informaba el doble de unidades y el
+    // admin decidía sobre ese número inflado.
+    const csvDosPorUnidad = [
+      'nombre,telefono,email,unidad,rol',
+      'Propietaria Nueva,+549119998001,,7K,PROPIETARIO',
+      'Inquilino Nuevo,+549119998002,,7K,INQUILINO',
+    ].join('\n');
+    const res = await fetch(`${base}/import/residentes`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({ consorcio_id: cons.id, csv: csvDosPorUnidad, dry_run: true, crear_unidades: true }),
+    });
+    expect(res.status).toBe(201);
+    const r = (await res.json()) as { unidadesCreadas: string[]; validas: number; dryRun: boolean };
+    expect(r.dryRun).toBe(true);
+    expect(r.validas).toBe(2);
+    expect(r.unidadesCreadas).toEqual(['7K']);
+
+    // Y no escribió nada, que es el punto de la prueba.
+    const nada = await systemDb
+      .select({ id: residente.id })
+      .from(residente)
+      .where(and(eq(residente.tenantId, ten.id), like(residente.telefonoE164, '+54911999800%')));
+    expect(nada).toHaveLength(0);
+  });
+
   it('un residente no puede importar', async () => {
     const res = await fetch(`${base}/import/residentes`, {
       method: 'POST',

@@ -4,14 +4,20 @@ import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
   createGasto,
+  getHistorial,
   getTicket,
+  listCategorias,
   listGastos,
+  listUnidades,
   totalGastos,
   transitionTicket,
+  type Categoria,
   type Gasto,
+  type HistorialEvento,
   type Ticket,
   type TicketEstado,
   type TicketOrigen,
+  type Unidad,
 } from '../lib/api.js';
 
 const ESTADO_LABEL: Record<TicketEstado, string> = {
@@ -49,23 +55,35 @@ export function TicketDetailPage(): JSX.Element {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [totales, setTotales] = useState<Array<{ moneda: string; total: number }>>([]);
+  const [historial, setHistorial] = useState<HistorialEvento[]>([]);
+  const [unidades, setUnidades] = useState<Unidad[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showValidar, setShowValidar] = useState(false);
   const [origenChoice, setOrigenChoice] = useState<TicketOrigen>('ESPACIO_COMUN');
+  const [unidadReportada, setUnidadReportada] = useState('');
+  const [categoriaChoice, setCategoriaChoice] = useState('');
   const [nota, setNota] = useState('');
   const [showGasto, setShowGasto] = useState(false);
   const [gDesc, setGDesc] = useState('');
   const [gMonto, setGMonto] = useState('');
   const [gComprobante, setGComprobante] = useState('');
+  const [gEstado, setGEstado] = useState<'BORRADOR' | 'CONFIRMADO'>('CONFIRMADO');
 
   const refresh = useCallback(async () => {
     if (!id) return;
     try {
-      const [t, g, tot] = await Promise.all([getTicket(id), listGastos(id), totalGastos(id)]);
+      const [t, g, tot, hist] = await Promise.all([
+        getTicket(id),
+        listGastos(id),
+        totalGastos(id),
+        getHistorial(id),
+      ]);
       setTicket(t);
       setGastos(g);
       setTotales(tot);
+      setHistorial(hist);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -74,6 +92,31 @@ export function TicketDetailPage(): JSX.Element {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Unidades y categorías del consorcio del ticket: se necesitan para validar.
+  // Sin la lista de unidades no se puede elegir la unidad señalada en una
+  // CONDUCTA, y la API rechaza la validación sin ese dato.
+  useEffect(() => {
+    if (!ticket) return;
+    let vigente = true;
+    void (async () => {
+      try {
+        const [us, cs] = await Promise.all([
+          listUnidades(ticket.consorcioId),
+          listCategorias(ticket.consorcioId),
+        ]);
+        if (!vigente) return;
+        setUnidades(us);
+        setCategorias(cs);
+      } catch {
+        // No es fatal: la validación de infraestructura funciona igual. El
+        // selector de conducta avisa por su cuenta si la lista quedó vacía.
+      }
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, [ticket?.consorcioId, ticket]);
 
   if (!id) return <div className="error">Sin id</div>;
 
@@ -107,11 +150,12 @@ export function TicketDetailPage(): JSX.Element {
         monto,
         moneda: 'ARS',
         ...(gComprobante && { comprobante_url: gComprobante }),
-        estado: 'CONFIRMADO',
+        estado: gEstado,
       });
       setGDesc('');
       setGMonto('');
       setGComprobante('');
+      setGEstado('CONFIRMADO');
       setShowGasto(false);
       await refresh();
     } catch (e) {
@@ -132,6 +176,13 @@ export function TicketDetailPage(): JSX.Element {
 
   const totalARS = totales.find((t) => t.moneda === 'ARS')?.total ?? 0;
   const tieneVisibilidad = ticket.origen !== null;
+  const ia = ticket.clasificacion ?? null;
+  const confianzaPct = ia?.confianza != null ? Math.round(ia.confianza * 100) : null;
+  const esConducta = ticket.tipo === 'CONDUCTA';
+  const etiquetaDe = (unidadId: string | null): string => {
+    if (!unidadId) return 'común';
+    return unidades.find((u) => u.id === unidadId)?.etiqueta ?? unidadId.slice(0, 8);
+  };
 
   return (
     <>
@@ -143,9 +194,14 @@ export function TicketDetailPage(): JSX.Element {
           <span style={{ color: 'var(--cf-ink-3)', fontSize: 13 }}>/</span>
           <span style={{ fontSize: 13.5, fontWeight: 600 }}>{ticket.titulo}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn ghost"><Icons.bell size={14} />Notificar vecinos</button>
-        </div>
+        {/* Acá había un botón "Notificar vecinos" sin handler. No se reemplaza
+            por uno funcional porque el sistema no tiene aviso manual: las
+            notificaciones salen solas en cada transición de estado (RF-G01) y
+            se auditan en Notificaciones. Un botón que promete algo que el
+            sistema no hace es peor que no tenerlo. */}
+        <Link to={`/notificaciones?ticket=${ticket.id}`} className="btn ghost">
+          <Icons.bell size={14} />Ver avisos enviados
+        </Link>
       </div>
 
       <div className="content">
@@ -158,27 +214,54 @@ export function TicketDetailPage(): JSX.Element {
                 <div style={{ flex: 1 }}>
                   <div className="ai-panel-title">Sugerencia de la IA</div>
                   <div style={{ fontSize: 11.5, color: 'var(--cf-ink-3)' }}>
-                    Texto · {ticket.tipo === 'CONDUCTA' ? 'reporte de conducta' : 'reporte de infraestructura'}
+                    {ia
+                      ? `${ia.modelo} · prompt ${ia.promptVersion}`
+                      : 'Cargado a mano por la administración — sin clasificar'}
                   </div>
                 </div>
-                <span className="chip blue"><span className="mono">85%</span> confianza</span>
+                {/* La confianza sale de `clasificacion_ia`. Antes había un 85%
+                    fijo escrito en el código: el admin decidía mirando un
+                    número inventado. Si no hay clasificación no se muestra
+                    ninguno. */}
+                {confianzaPct !== null && (
+                  <span className={`chip ${confianzaPct >= 80 ? 'blue' : 'med'}`}>
+                    <span className="mono">{confianzaPct}%</span> confianza
+                  </span>
+                )}
+                {ia?.corregidoPorAdmin && (
+                  <span className="chip ok" title="La sugerencia fue corregida al validar">corregida</span>
+                )}
               </div>
               <div className="ai-panel-body">
                 <div className="ai-keyvals">
                   <div>
                     <div className="keyval-k">Categoría sugerida</div>
-                    <div className={`keyval-v ${ticket.origen === 'ESPACIO_COMUN' ? 'common' : ''}`}>
-                      {ticket.tipo === 'CONDUCTA'
-                        ? 'Conducta'
-                        : ticket.origen === 'ESPACIO_COMUN'
-                          ? 'Espacio Común'
-                          : ticket.origen === 'UNIDAD'
-                            ? 'Unidad Privada'
-                            : 'Sin validar'}
+                    <div className="keyval-v">
+                      {ia?.sugerido.categoria ?? <span className="muted">—</span>}
                     </div>
                   </div>
                   <div>
-                    <div className="keyval-k">Urgencia</div>
+                    <div className="keyval-k">Tipo sugerido</div>
+                    <div className="keyval-v">
+                      {ia?.sugerido.tipo === 'CONDUCTA'
+                        ? 'Conducta'
+                        : ia?.sugerido.tipo === 'INFRAESTRUCTURA'
+                          ? 'Infraestructura'
+                          : <span className="muted">—</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="keyval-k">Origen sugerido</div>
+                    <div className={`keyval-v ${ia?.sugerido.origen === 'ESPACIO_COMUN' ? 'common' : ''}`}>
+                      {ia?.sugerido.origen === 'ESPACIO_COMUN'
+                        ? 'Espacio común'
+                        : ia?.sugerido.origen === 'UNIDAD'
+                          ? 'Unidad privada'
+                          : <span className="muted">—</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="keyval-k">Urgencia (vigente)</div>
                     <div className={`keyval-v ${URGENCIA_CLS[ticket.urgencia]}`}>
                       {URGENCIA_LABEL[ticket.urgencia]}
                     </div>
@@ -188,9 +271,30 @@ export function TicketDetailPage(): JSX.Element {
                     <div className="keyval-v">{ESTADO_LABEL[ticket.estado]}</div>
                   </div>
                 </div>
+
+                {/* RF-F01: la unidad que el modelo dedujo del texto NO se imputa
+                    sola. Se muestra como pista para que el admin la confirme
+                    contra la lista real de unidades. */}
+                {ia?.sugerido.unidad_reportada_texto && (
+                  <div className="muted small mt-2">
+                    El vecino mencionó: “{ia.sugerido.unidad_reportada_texto}”. Confirmá la unidad al validar.
+                  </div>
+                )}
+
                 <div className="ai-summary">
                   <b style={{ color: 'var(--cf-ink)' }}>Descripción:</b> {ticket.descripcionNormalizada}
                 </div>
+
+                {/* RF-C07: lo que costó clasificar este ticket. Se persistía en
+                    la base y no se mostraba en ninguna pantalla. */}
+                {ia && (ia.costoUsd || ia.latenciaMs || ia.tokensIn) && (
+                  <div className="muted small mt-2" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    {ia.costoUsd && <span>Costo IA: <span className="mono">US$ {Number(ia.costoUsd).toFixed(6)}</span></span>}
+                    {ia.tokensIn !== null && <span>Tokens: <span className="mono">{ia.tokensIn}→{ia.tokensOut ?? 0}</span></span>}
+                    {ia.latenciaMs !== null && <span>Latencia: <span className="mono">{ia.latenciaMs} ms</span></span>}
+                    {ia.cacheHit && <span>cache hit</span>}
+                  </div>
+                )}
 
                 {ticket.estado === 'REGISTRADO' && (
                   <div className="actions mt-4">
@@ -210,11 +314,68 @@ export function TicketDetailPage(): JSX.Element {
                       </>
                     ) : (
                       <div className="card tight" style={{ width: '100%' }}>
-                        <div className="uppercase mt-2">Origen (afecta visibilidad)</div>
-                        <div className="segment mt-2">
-                          <button type="button" className={origenChoice === 'ESPACIO_COMUN' ? 'on' : ''} onClick={() => setOrigenChoice('ESPACIO_COMUN')}>Espacio común</button>
-                          <button type="button" className={origenChoice === 'UNIDAD' ? 'on' : ''} onClick={() => setOrigenChoice('UNIDAD')}>Unidad</button>
-                        </div>
+                        {esConducta ? (
+                          <>
+                            {/* RF-F01: sin esto la validación de una conducta es
+                                imposible. La API la exige (y hay un CHECK en la
+                                base que la respalda), así que el botón fallaba
+                                siempre: el circuito entero de conducta quedaba
+                                inalcanzable desde el panel. */}
+                            <div className="uppercase mt-2">Unidad señalada (obligatoria)</div>
+                            <div className="muted small mt-2">
+                              Es la unidad del vecino denunciado. Define quién ve el ticket, así que
+                              conviene confirmarla antes de validar.
+                            </div>
+                            <label className="mt-2">
+                              <span>Unidad</span>
+                              <select value={unidadReportada} onChange={(e) => setUnidadReportada(e.target.value)} required>
+                                <option value="">Elegí una unidad…</option>
+                                {unidades.map((u) => (
+                                  <option key={u.id} value={u.id}>{u.etiqueta}</option>
+                                ))}
+                              </select>
+                            </label>
+                            {unidades.length === 0 && (
+                              <div className="error small mt-2">
+                                Este consorcio no tiene unidades cargadas. Cargá la unidad del vecino
+                                señalado en Unidades y volvé.
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="uppercase mt-2">Origen (afecta visibilidad)</div>
+                            <div className="segment mt-2">
+                              <button type="button" className={origenChoice === 'ESPACIO_COMUN' ? 'on' : ''} onClick={() => setOrigenChoice('ESPACIO_COMUN')}>Espacio común</button>
+                              <button type="button" className={origenChoice === 'UNIDAD' ? 'on' : ''} onClick={() => setOrigenChoice('UNIDAD')}>Unidad</button>
+                            </div>
+                            <div className="muted small mt-2">
+                              {origenChoice === 'ESPACIO_COMUN'
+                                ? 'Lo van a ver todos los residentes del consorcio, con su costo confirmado.'
+                                : 'Lo van a ver solo la administración y los ocupantes de la unidad.'}
+                            </div>
+                          </>
+                        )}
+
+                        {/* La categoría corregida por el admin alimenta el
+                            dataset de RF-C04. El campo existía en la API y
+                            ninguna pantalla lo mandaba, así que la corrección
+                            nunca se registraba. */}
+                        {categorias.length > 0 && (
+                          <label className="mt-3">
+                            <span>
+                              Categoría
+                              {ia?.sugerido.categoria ? ` (la IA sugirió “${ia.sugerido.categoria}”)` : ''}
+                            </span>
+                            <select value={categoriaChoice} onChange={(e) => setCategoriaChoice(e.target.value)}>
+                              <option value="">Sin cambiar</option>
+                              {categorias.map((c) => (
+                                <option key={c.id} value={c.id}>{c.nombre}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+
                         <div className="mt-3">
                           <label>
                             <span>Nota interna</span>
@@ -222,7 +383,19 @@ export function TicketDetailPage(): JSX.Element {
                           </label>
                         </div>
                         <div className="actions mt-3">
-                          <button type="button" className="btn primary" disabled={busy} onClick={() => doTransition('VALIDADO', { origen: origenChoice, ...(nota && { nota }) })}>
+                          <button
+                            type="button"
+                            className="btn primary"
+                            disabled={busy || (esConducta && !unidadReportada)}
+                            onClick={() =>
+                              doTransition('VALIDADO', {
+                                origen: esConducta ? 'UNIDAD' : origenChoice,
+                                ...(esConducta && { unidad_reportada_id: unidadReportada }),
+                                ...(categoriaChoice && { categoria_id: categoriaChoice }),
+                                ...(nota && { nota }),
+                              })
+                            }
+                          >
                             Confirmar validación
                           </button>
                           <button type="button" className="btn ghost" disabled={busy} onClick={() => setShowValidar(false)}>Cancelar</button>
@@ -296,7 +469,20 @@ export function TicketDetailPage(): JSX.Element {
                     <span>URL del comprobante</span>
                     <input type="url" value={gComprobante} onChange={(e) => setGComprobante(e.target.value)} placeholder="https://…" />
                   </label>
-                  <button type="submit" className="btn primary" disabled={busy || !gDesc || !gMonto}>Confirmar gasto</button>
+                  {/* El BORRADOR existía en la API y en la base desde el
+                      principio, y el panel mandaba siempre CONFIRMADO: no había
+                      forma de anotar un presupuesto tentativo sin publicarlo a
+                      los vecinos, que es justamente para qué está el estado. */}
+                  <label>
+                    <span>Estado</span>
+                    <select value={gEstado} onChange={(e) => setGEstado(e.target.value as 'BORRADOR' | 'CONFIRMADO')}>
+                      <option value="CONFIRMADO">Confirmado — visible a los vecinos</option>
+                      <option value="BORRADOR">Borrador — solo la administración</option>
+                    </select>
+                  </label>
+                  <button type="submit" className="btn primary" disabled={busy || !gDesc || !gMonto}>
+                    {gEstado === 'BORRADOR' ? 'Guardar borrador' : 'Confirmar gasto'}
+                  </button>
                 </form>
               )}
 
@@ -308,6 +494,7 @@ export function TicketDetailPage(): JSX.Element {
                     <tr>
                       <th>Descripción</th>
                       <th>Monto</th>
+                      <th>Estado</th>
                       <th>Comprobante</th>
                       <th>Fecha</th>
                     </tr>
@@ -317,12 +504,52 @@ export function TicketDetailPage(): JSX.Element {
                       <tr key={g.id}>
                         <td>{g.descripcion}</td>
                         <td className="mono">{g.moneda} {Number(g.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                        <td>
+                          <span className={`chip ${g.estado === 'CONFIRMADO' ? 'ok' : 'med'}`}>
+                            {g.estado === 'CONFIRMADO' ? 'confirmado' : 'borrador'}
+                          </span>
+                        </td>
                         <td>{g.comprobanteUrl ? <a href={g.comprobanteUrl} target="_blank" rel="noreferrer">ver</a> : <span className="muted">—</span>}</td>
                         <td className="muted small">{new Date(g.createdAt).toLocaleString('es-AR')}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+              <div className="muted small mt-2">
+                El total de arriba suma solo los confirmados: es el número que ven los vecinos
+                cuando el ticket es de espacio común.
+              </div>
+            </div>
+
+            {/* Historial auditable (RF-D02). El endpoint existía y ninguna
+                pantalla lo llamaba, así que no había forma de ver quién movió
+                el ticket ni con qué nota. */}
+            <div className="card">
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Historial del ticket</div>
+              {historial.length === 0 ? (
+                <div className="muted small">Sin eventos registrados.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {historial.map((h, i) => (
+                    <div key={`${h.at}-${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1, lineHeight: 1.35 }}>
+                        <div style={{ fontSize: 13 }}>
+                          {h.estadoAnterior && h.estadoNuevo
+                            ? `${ESTADO_LABEL[h.estadoAnterior]} → ${ESTADO_LABEL[h.estadoNuevo]}`
+                            : h.estadoNuevo
+                              ? `Creado como ${ESTADO_LABEL[h.estadoNuevo]}`
+                              : h.transicion}
+                          {h.autorTipo && (
+                            <span className="muted small"> · {h.autorTipo === 'ADMIN' ? 'administración' : 'residente'}</span>
+                          )}
+                        </div>
+                        {h.nota && <div className="muted small" style={{ marginTop: 2 }}>{h.nota}</div>}
+                      </div>
+                      <span className="muted small" style={{ flexShrink: 0 }}>{shortDate(h.at)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -373,11 +600,29 @@ export function TicketDetailPage(): JSX.Element {
                 <dt>Consorcio</dt>
                 <dd className="mono small">{ticket.consorcioId.slice(0, 8)}</dd>
                 <dt>Unidad</dt>
-                <dd className="mono small">{ticket.unidadId ? ticket.unidadId.slice(0, 8) : 'común'}</dd>
+                <dd className="small">{etiquetaDe(ticket.unidadId)}</dd>
                 <dt>Visibilidad</dt>
-                <dd>{!tieneVisibilidad ? 'Sin validar' : ticket.origen === 'ESPACIO_COMUN' ? 'Todos los vecinos' : 'Solo ocupantes'}</dd>
+                <dd>
+                  {!tieneVisibilidad
+                    ? 'Sin validar'
+                    : esConducta
+                      ? 'Administración + ocupantes de la unidad señalada'
+                      : ticket.origen === 'ESPACIO_COMUN'
+                        ? 'Todos los vecinos'
+                        : 'Solo ocupantes'}
+                </dd>
                 <dt>Tipo</dt>
-                <dd>{ticket.tipo === 'CONDUCTA' ? 'Conducta (anónimo)' : 'Infraestructura'}</dd>
+                <dd>{esConducta ? 'Conducta (anónimo)' : 'Infraestructura'}</dd>
+                {esConducta && (
+                  <>
+                    <dt>Unidad señalada</dt>
+                    <dd className="small">
+                      {ticket.unidadReportadaId
+                        ? etiquetaDe(ticket.unidadReportadaId)
+                        : <span className="muted">sin confirmar</span>}
+                    </dd>
+                  </>
+                )}
               </dl>
             </div>
           </aside>

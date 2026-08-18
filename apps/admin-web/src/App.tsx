@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Shell } from './components/Shell.js';
 import { AuthProvider, useAuth } from './lib/auth-ctx.js';
 import { AuditPage } from './pages/AuditPage.js';
+import { AdministracionesPage } from './pages/AdministracionesPage.js';
 import { BandejaPage } from './pages/BandejaPage.js';
 import { ConsorciosPage } from './pages/ConsorciosPage.js';
 import { LoginPage } from './pages/LoginPage.js';
@@ -39,6 +40,7 @@ export function App(): JSX.Element {
           <Route path="residentes" element={<ResidentesPage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
           <Route path="bitacora" element={<AuditPage />} />
+          <Route path="administraciones" element={<AdministracionesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

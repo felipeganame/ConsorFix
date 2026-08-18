@@ -27,6 +27,39 @@ export interface CreateTicketInput {
   creadoPorAdminId?: string;
 }
 
+/**
+ * Columnas del ticket que se exponen por HTTP.
+ *
+ * Existe para dejar afuera `embedding`: es un vector de 384 floats que sirve
+ * para el dedup del lado del servidor y que ningún cliente usa, pero
+ * `select()` lo traía igual y se serializaba como ~877 bytes por ticket. En un
+ * consorcio con tickets creados por el bot era casi la mitad del peso de la
+ * bandeja (medido: 47% de la respuesta).
+ */
+const COLUMNAS_PUBLICAS = {
+  id: ticket.id,
+  tenantId: ticket.tenantId,
+  consorcioId: ticket.consorcioId,
+  unidadId: ticket.unidadId,
+  unidadReportadaId: ticket.unidadReportadaId,
+  reportanteId: ticket.reportanteId,
+  tipo: ticket.tipo,
+  origen: ticket.origen,
+  urgencia: ticket.urgencia,
+  estado: ticket.estado,
+  titulo: ticket.titulo,
+  descripcionNormalizada: ticket.descripcionNormalizada,
+  clientGeneratedId: ticket.clientGeneratedId,
+  shortCode: ticket.shortCode,
+  votosCount: ticket.votosCount,
+  categoriaId: ticket.categoriaId,
+  duplicadoDeId: ticket.duplicadoDeId,
+  createdAt: ticket.createdAt,
+  validatedAt: ticket.validatedAt,
+  solucionadoAt: ticket.solucionadoAt,
+  updatedAt: ticket.updatedAt,
+} as const;
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -135,7 +168,12 @@ export class TicketsService {
       const conds = [eq(ticket.tenantId, tenantId)];
       if (opts.consorcioId) conds.push(eq(ticket.consorcioId, opts.consorcioId));
       if (opts.estado) conds.push(eq(ticket.estado, opts.estado));
-      return tx.select().from(ticket).where(and(...conds)).orderBy(desc(ticket.createdAt)).limit(200);
+      return tx
+        .select(COLUMNAS_PUBLICAS)
+        .from(ticket)
+        .where(and(...conds))
+        .orderBy(desc(ticket.createdAt))
+        .limit(200);
     });
   }
 
@@ -154,11 +192,44 @@ export class TicketsService {
    */
   async byId(tenantId: string, id: string, viewer: TicketViewer) {
     return withTenant(tenantId, async (tx) => {
-      const rows = await tx.select().from(ticket).where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id))).limit(1);
+      const rows = await tx
+        .select(COLUMNAS_PUBLICAS)
+        .from(ticket)
+        .where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id)))
+        .limit(1);
       const t = rows[0];
       if (!t) throw new NotFoundException('ticket not found');
 
-      if (viewer.kind !== 'RESIDENTE') return t;
+      if (viewer.kind !== 'RESIDENTE') {
+        // La sugerencia de la IA va SOLO al admin, y solo acá: es lo que la
+        // regla 4 le pide decidir, y hasta ahora el panel no la recibía nunca
+        // —mostraba una confianza fija del 85% y derivaba la "categoría
+        // sugerida" de los campos ya confirmados, o sea de su propia decisión.
+        // Al residente no se le expone: en CONDUCTA el `sugerido` contiene el
+        // texto crudo del denunciante y la unidad que el modelo dedujo.
+        const ia = (
+          await tx
+            .select({
+              sugerido: clasificacionIa.sugerido,
+              corregidoPorAdmin: clasificacionIa.corregidoPorAdmin,
+              confianza: clasificacionIa.confianza,
+              modelo: clasificacionIa.modelo,
+              promptVersion: clasificacionIa.promptVersion,
+              tokensIn: clasificacionIa.tokensIn,
+              tokensOut: clasificacionIa.tokensOut,
+              costoUsd: clasificacionIa.costoUsd,
+              latenciaMs: clasificacionIa.latenciaMs,
+              cacheHit: clasificacionIa.cacheHit,
+            })
+            .from(clasificacionIa)
+            .where(and(eq(clasificacionIa.tenantId, tenantId), eq(clasificacionIa.ticketId, id)))
+            .limit(1)
+        )[0];
+        // `null` explícito y no ausencia: un ticket cargado a mano por el admin
+        // no pasó por el clasificador, y el panel tiene que poder distinguirlo
+        // de "todavía no llegó".
+        return { ...t, clasificacion: ia ?? null };
+      }
 
       const ctx = await loadResidenteCtx(tx, tenantId, viewer.residenteId);
       const visible = canResidenteSeeTicket(ctx, {

@@ -214,7 +214,13 @@ export class ImportService {
             unidadId = nueva.id;
             porEtiqueta.set(clave, unidadId);
           } else {
+            // También se marca en la prueba, y no solo al escribir: sin esto
+            // cada fila que apunta a la misma unidad nueva la volvía a contar,
+            // así que una planilla con dos ocupantes por unidad informaba el
+            // doble de unidades a crear. El admin usa justamente esta vista
+            // previa para decidir si aplica el archivo.
             unidadId = 'dry-run';
+            porEtiqueta.set(clave, unidadId);
           }
           resultado.unidadesCreadas.push(v.unidad.trim());
         }

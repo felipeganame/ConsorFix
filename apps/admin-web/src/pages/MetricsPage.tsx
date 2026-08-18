@@ -168,6 +168,59 @@ export function MetricsPage(): JSX.Element {
                 </div>
               </div>
 
+              {/* RF-C07: costo del clasificador. La API lo calculaba desde la
+                  migración 0006 y no había ninguna pantalla que lo mostrara,
+                  así que el dato con el que se decide si el precio del SaaS
+                  cierra existía solo en la base. */}
+              <div className="card">
+                <div className="row-between" style={{ marginBottom: 12 }}>
+                  <div className="uppercase">Costo de la IA</div>
+                  <span className="muted small">
+                    {data.costoIa.ticketsClasificados} ticket{data.costoIa.ticketsClasificados === 1 ? '' : 's'} clasificado{data.costoIa.ticketsClasificados === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {data.costoIa.ticketsClasificados === 0 ? (
+                  <div className="muted small">
+                    Todavía no se clasificó ningún ticket en este consorcio. Con el proveedor en
+                    modo mock el costo es cero por definición.
+                  </div>
+                ) : (
+                  <>
+                    <div className="kpi-strip">
+                      <div className="kpi">
+                        <div className="kpi-label">Costo total</div>
+                        <div className="kpi-value">US$ {data.costoIa.totalUsd.toFixed(4)}</div>
+                        <div className="kpi-delta">acumulado</div>
+                      </div>
+                      <div className="kpi">
+                        <div className="kpi-label">Por ticket</div>
+                        <div className="kpi-value">US$ {data.costoIa.promedioPorTicketUsd.toFixed(6)}</div>
+                        <div className="kpi-delta">promedio</div>
+                      </div>
+                      <div className="kpi">
+                        <div className="kpi-label">Latencia mediana</div>
+                        <div className="kpi-value">{data.costoIa.latenciaP50Ms} ms</div>
+                        <div className="kpi-delta">p50 del clasificador</div>
+                      </div>
+                      <div className="kpi">
+                        <div className="kpi-label">Corregidos por el admin</div>
+                        <div className="kpi-value">{data.costoIa.corregidosPorAdmin}</div>
+                        <div className="kpi-delta">
+                          {data.costoIa.ticketsClasificados > 0
+                            ? `${Math.round((data.costoIa.corregidosPorAdmin / data.costoIa.ticketsClasificados) * 100)}% de tasa de error`
+                            : '—'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="muted small mt-3">
+                      Tokens: <span className="mono">{data.costoIa.tokensIn.toLocaleString('es-AR')}</span> de entrada ·{' '}
+                      <span className="mono">{data.costoIa.tokensOut.toLocaleString('es-AR')}</span> de salida. Cada
+                      corrección del admin alimenta el dataset de evaluación del clasificador.
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="card">
                 <div className="uppercase" style={{ marginBottom: 12 }}>Gastos confirmados</div>
                 {data.costosConfirmados.length === 0 ? (

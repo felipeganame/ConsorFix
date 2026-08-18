@@ -25,6 +25,15 @@ const NAV: NavItem[] = [
   { to: '/bitacora', label: 'Bitácora', icon: Icons.shield },
 ];
 
+/**
+ * Solo para el super administrador de la plataforma: da de alta administraciones
+ * (RF-A01). No se muestra al ADMIN porque la API le responde 403, y ofrecerle un
+ * link que siempre falla es peor que no ofrecerlo.
+ */
+const NAV_SUPER: NavItem[] = [
+  { to: '/administraciones', label: 'Administraciones', icon: Icons.building },
+];
+
 export function Shell(_props: ShellProps): JSX.Element {
   const { user, logout } = useAuth();
   const nav = useNavigate();
@@ -122,7 +131,7 @@ export function Shell(_props: ShellProps): JSX.Element {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {[...NAV, ...(user?.kind === 'SUPER_ADMIN' ? NAV_SUPER : [])].map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end ?? false}>
               {({ isActive }) => (
                 <>
@@ -170,14 +179,13 @@ export function Topbar({ title, subtitle, actions }: TopbarProps): JSX.Element {
         <h1>{title}</h1>
         {subtitle && <div className="topbar-sub">{subtitle}</div>}
       </div>
-      <div className="topbar-actions">
-        <div className="search">
-          <Icons.search size={14} />
-          <input placeholder="Buscar incidentes, vecinos…" />
-          <span className="mono" style={{ background: 'var(--cf-bg)', padding: '1px 5px', borderRadius: 4, fontSize: 10.5 }}>⌘K</span>
-        </div>
-        {actions}
-      </div>
+      {/* Acá había un buscador global con un atajo "⌘K" dibujado: el input no
+          tenía value ni onChange y el atajo no existía en ningún listener, así
+          que era el control más visible del panel y no hacía absolutamente
+          nada. La búsqueda real vive en la bandeja, que es donde hay algo que
+          buscar; un buscador global honesto necesitaría un endpoint de búsqueda
+          que la API todavía no tiene. */}
+      <div className="topbar-actions">{actions}</div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Topbar } from '../components/Shell.js';
 import { listNotifs, type NotifEntry } from '../lib/api.js';
 
@@ -34,15 +35,20 @@ export function NotificationsPage(): JSX.Element {
   const [items, setItems] = useState<NotifEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // `?ticket=` llega desde el detalle del ticket. La API ya aceptaba el filtro
+  // y esta pantalla lo ignoraba, así que el admin tenía que buscar a ojo entre
+  // todos los envíos del tenant.
+  const [params, setParams] = useSearchParams();
+  const ticketFiltro = params.get('ticket') ?? '';
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    listNotifs()
+    listNotifs(ticketFiltro ? { ticket_id: ticketFiltro } : {})
       .then(setItems)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [ticketFiltro]);
 
   const sent = items.filter((i) => i.estado === 'ENVIADA').length;
   const failed = items.filter((i) => i.estado === 'FALLIDA').length;
@@ -52,6 +58,21 @@ export function NotificationsPage(): JSX.Element {
     <>
       <Topbar title="Notificaciones" subtitle="Historial de envíos a vecinos (RF-G01..G03)" />
       <div className="content">
+        {ticketFiltro && (
+          <section style={{ paddingBottom: 0 }}>
+            <div className="row-between card tight">
+              <span className="small">
+                Filtrando los avisos del ticket <span className="mono">#{ticketFiltro.slice(0, 8)}</span>
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Link className="btn ghost sm" to={`/tickets/${ticketFiltro}`}>Ver ticket</Link>
+                <button type="button" className="btn ghost sm" onClick={() => setParams({})}>
+                  Ver todos
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
         <section style={{ paddingBottom: 0 }}>
           <div className="kpi-strip">
             <div className="kpi">

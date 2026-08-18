@@ -134,10 +134,41 @@ export interface Ticket {
   descripcionNormalizada: string;
   votosCount: number;
   categoriaId: string | null;
+  /** Unidad del vecino señalado; solo en CONDUCTA (RF-F01, migración 0004). */
+  unidadReportadaId: string | null;
   createdAt: string;
   validatedAt: string | null;
   solucionadoAt: string | null;
   updatedAt: string;
+  /** Solo presente en el detalle (GET /tickets/:id) y solo para admins. */
+  clasificacion?: ClasificacionIa | null;
+}
+
+/**
+ * Sugerencia del clasificador tal como quedó persistida. `null` cuando el
+ * ticket no pasó por la IA (lo cargó un admin a mano), que es distinto de
+ * "todavía no llegó".
+ */
+export interface ClasificacionIa {
+  sugerido: {
+    tipo?: TicketTipo;
+    origen?: TicketOrigen;
+    titulo?: string;
+    urgencia?: TicketUrgencia;
+    categoria?: string;
+    descripcion_normalizada?: string;
+    ubicacion?: string;
+    unidad_reportada_texto?: string;
+  };
+  corregidoPorAdmin: Record<string, unknown> | null;
+  confianza: number | null;
+  modelo: string;
+  promptVersion: string;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  costoUsd: string | null;
+  latenciaMs: number | null;
+  cacheHit: boolean;
 }
 
 export function listConsorcios(): Promise<Consorcio[]> {
@@ -201,9 +232,74 @@ export function listTickets(filters: {
 export function getTicket(id: string): Promise<Ticket> {
   return apiFetch<Ticket>(`/tickets/${id}`);
 }
+
+/**
+ * Carga manual de un ticket por el admin: alguien reporta por teléfono, en
+ * persona o en la reunión de consorcio. Es el criterio de salida de la Fase 1.
+ */
+export function createTicket(body: {
+  consorcio_id: string;
+  unidad_id: string | null;
+  tipo: TicketTipo;
+  urgencia: TicketUrgencia;
+  origen_sugerido?: TicketOrigen;
+  titulo: string;
+  descripcion: string;
+}): Promise<Ticket> {
+  return apiFetch<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/**
+ * Un evento del historial tal como lo devuelve la API. `nota`, `autorTipo` y
+ * `autorId` son opcionales a propósito: el service los omite según quién
+ * pregunta (en CONDUCTA un residente no recibe ni la nota ni el autor), así que
+ * el tipo tiene que admitir su ausencia y no fingir que siempre llegan.
+ */
+export interface HistorialEvento {
+  transicion: string;
+  estadoAnterior: TicketEstado | null;
+  estadoNuevo: TicketEstado | null;
+  nota?: string | null;
+  autorTipo?: string | null;
+  autorId?: string;
+  at: string;
+}
+
+/** Historial auditable del ticket (RF-D02). */
+export function getHistorial(id: string): Promise<HistorialEvento[]> {
+  return apiFetch<HistorialEvento[]>(`/tickets/${id}/historial`);
+}
+
+export interface Categoria {
+  id: string;
+  tenantId: string;
+  consorcioId: string;
+  nombre: string;
+  esConducta: boolean;
+  createdAt: string;
+}
+
+export function listCategorias(consorcioId?: string): Promise<Categoria[]> {
+  const q = consorcioId ? `?consorcio_id=${encodeURIComponent(consorcioId)}` : '';
+  return apiFetch<Categoria[]>(`/categorias${q}`);
+}
+export function createCategoria(body: {
+  consorcio_id: string;
+  nombre: string;
+  es_conducta?: boolean;
+}): Promise<Categoria> {
+  return apiFetch<Categoria>('/categorias', { method: 'POST', body: JSON.stringify(body) });
+}
 export function transitionTicket(
   id: string,
-  body: { to: TicketEstado; origen?: TicketOrigen; categoria_id?: string; nota?: string },
+  body: {
+    to: TicketEstado;
+    origen?: TicketOrigen;
+    categoria_id?: string;
+    nota?: string;
+    /** Obligatorio para validar una CONDUCTA (RF-F01). */
+    unidad_reportada_id?: string;
+  },
 ): Promise<Ticket> {
   return apiFetch<Ticket>(`/tickets/${id}/transitions`, {
     method: 'POST',
@@ -251,6 +347,20 @@ export interface MetricsOverview {
   byUrgencia: Array<{ urgencia: TicketUrgencia; count: number }>;
   avgResolutionMinutes: number | string | null;
   costosConfirmados: Array<{ moneda: string; total: number }>;
+  /**
+   * Telemetría del clasificador (RF-C07). La API la venía calculando y ninguna
+   * pantalla la declaraba, así que el dato existía y no se veía. `corregidosPorAdmin`
+   * es la métrica que importa para la tesis: cuántas veces la IA se equivocó.
+   */
+  costoIa: {
+    ticketsClasificados: number;
+    tokensIn: number;
+    tokensOut: number;
+    totalUsd: number;
+    promedioPorTicketUsd: number;
+    latenciaP50Ms: number;
+    corregidosPorAdmin: number;
+  };
 }
 
 export function getMetrics(consorcioId?: string): Promise<MetricsOverview> {
@@ -310,4 +420,68 @@ export interface SimilarTicket {
 }
 export function listSimilar(ticketId: string): Promise<SimilarTicket[]> {
   return apiFetch<SimilarTicket[]>(`/tickets/${ticketId}/similar`);
+}
+
+// ── Importación masiva de residentes (RF-A05) ────────────────────────────────
+
+export interface FilaError {
+  fila: number;
+  motivo: string;
+  datos: Record<string, string>;
+}
+
+export interface ResultadoImport {
+  totalFilas: number;
+  validas: number;
+  insertadas: number;
+  vinculosCreados: number;
+  vinculosYaExistentes: number;
+  reusados: Array<{ fila: number; telefono: string; nombreEnArchivo: string; nombreExistente: string }>;
+  errores: FilaError[];
+  dryRun: boolean;
+  unidadesCreadas: string[];
+}
+
+/**
+ * El CSV va como texto en el body, no como multipart: el panel lo lee con
+ * FileReader y así la API se ahorra multer. Con `dry_run` devuelve el mismo
+ * informe sin escribir nada, que es cómo el admin revisa una planilla de 200
+ * filas antes de aplicarla.
+ */
+export function importarResidentes(body: {
+  consorcio_id: string;
+  csv: string;
+  dry_run?: boolean;
+  crear_unidades?: boolean;
+}): Promise<ResultadoImport> {
+  return apiFetch<ResultadoImport>('/import/residentes', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Administraciones (RF-A01, solo SUPER_ADMIN) ───────────────────────────────
+
+export interface Tenant {
+  id: string;
+  nombre: string;
+  plan: string;
+  createdAt: string;
+}
+
+export function listTenants(): Promise<Tenant[]> {
+  return apiFetch<Tenant[]>('/tenants');
+}
+
+/**
+ * La administración se crea junto con su primer admin: un tenant sin nadie que
+ * pueda entrar no sirve, y hacerlo en dos pasos deja una ventana en la que la
+ * administración existe sin dueño.
+ */
+export function createTenant(body: {
+  nombre: string;
+  plan?: 'basico' | 'pro';
+  admin: { nombre: string; email: string; password: string };
+}): Promise<{ id: string; nombre: string; admin: { id: string; email: string } }> {
+  return apiFetch('/tenants', { method: 'POST', body: JSON.stringify(body) });
 }

@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
+  createTicket,
   getMetrics,
   listConsorcios,
   listTickets,
+  listUnidades,
   type Consorcio,
   type MetricsOverview,
   type Ticket,
   type TicketEstado,
+  type TicketOrigen,
+  type TicketTipo,
   type TicketUrgencia,
+  type Unidad,
 } from '../lib/api.js';
 
 const URGENCIA_RANK: Record<string, number> = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
@@ -50,18 +55,88 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('es-AR');
 }
 
+/**
+ * CSV del listado que el admin está viendo.
+ *
+ * Se arma en el cliente sobre los tickets ya cargados en vez de agregar un
+ * endpoint de export: es exactamente lo que la pantalla muestra (mismos
+ * filtros, mismo orden), no hay que mantener dos definiciones de "la bandeja",
+ * y para los volúmenes de un consorcio no justifica más superficie de API.
+ */
+function toCsv(rows: Ticket[], nombreConsorcio: (id: string) => string): string {
+  const cols = ['id', 'titulo', 'tipo', 'origen', 'urgencia', 'estado', 'votos', 'consorcio', 'creado'];
+  const esc = (v: unknown): string => {
+    const s = String(v ?? '');
+    // Excel en es-AR abre con separador ; pero el estándar es , — se citan
+    // todos los campos, así que da igual cuál interprete.
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const lineas = rows.map((t) =>
+    [
+      t.id,
+      t.titulo,
+      t.tipo,
+      t.origen ?? 'sin validar',
+      t.urgencia,
+      t.estado,
+      t.votosCount,
+      nombreConsorcio(t.consorcioId),
+      new Date(t.createdAt).toISOString(),
+    ]
+      .map(esc)
+      .join(','),
+  );
+  // BOM para que Excel reconozca UTF-8 y no rompa los acentos.
+  return `\ufeff${cols.map(esc).join(',')}\n${lineas.join('\n')}\n`;
+}
+
 export function BandejaPage(): JSX.Element {
+  const navigate = useNavigate();
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
   const [consorcioFilter, setConsorcioFilter] = useState<string>('');
   const [estadoFilter, setEstadoFilter] = useState<TicketEstado | ''>('REGISTRADO');
+  const [busqueda, setBusqueda] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [metrics, setMetrics] = useState<MetricsOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Alta manual (RF-B01 por mostrador): alguien reporta por teléfono o en la
+  // reunión de consorcio y el admin lo carga a mano.
+  const [showNuevo, setShowNuevo] = useState(false);
+  const [nvConsorcio, setNvConsorcio] = useState('');
+  const [nvUnidades, setNvUnidades] = useState<Unidad[]>([]);
+  const [nvUnidad, setNvUnidad] = useState('');
+  const [nvTipo, setNvTipo] = useState<TicketTipo>('INFRAESTRUCTURA');
+  const [nvOrigen, setNvOrigen] = useState<TicketOrigen>('ESPACIO_COMUN');
+  const [nvUrgencia, setNvUrgencia] = useState<TicketUrgencia>('MEDIA');
+  const [nvTitulo, setNvTitulo] = useState('');
+  const [nvDesc, setNvDesc] = useState('');
+  const [creando, setCreando] = useState(false);
+
   useEffect(() => {
     listConsorcios().then(setConsorcios).catch((e) => setError(e.message));
   }, []);
+
+  // Unidades del consorcio elegido en el alta manual.
+  useEffect(() => {
+    if (!nvConsorcio) {
+      setNvUnidades([]);
+      setNvUnidad('');
+      return;
+    }
+    let vigente = true;
+    listUnidades(nvConsorcio)
+      .then((us) => {
+        if (vigente) setNvUnidades(us);
+      })
+      .catch(() => {
+        if (vigente) setNvUnidades([]);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [nvConsorcio]);
 
   useEffect(() => {
     setLoading(true);
@@ -81,15 +156,65 @@ export function BandejaPage(): JSX.Element {
       .finally(() => setLoading(false));
   }, [consorcioFilter, estadoFilter]);
 
+  const nombreConsorcio = (cid: string): string =>
+    consorcios.find((c) => c.id === cid)?.nombre ?? cid.slice(0, 8);
+
+  async function onCrearTicket(e: FormEvent) {
+    e.preventDefault();
+    setCreando(true);
+    setError(null);
+    try {
+      const creado = await createTicket({
+        consorcio_id: nvConsorcio,
+        // En espacio común no hay unidad imputada; en conducta la unidad
+        // señalada se confirma al validar (RF-F01), no acá.
+        unidad_id: nvOrigen === 'UNIDAD' && nvUnidad ? nvUnidad : null,
+        tipo: nvTipo,
+        urgencia: nvUrgencia,
+        ...(nvTipo === 'INFRAESTRUCTURA' && { origen_sugerido: nvOrigen }),
+        titulo: nvTitulo,
+        descripcion: nvDesc,
+      });
+      setShowNuevo(false);
+      setNvTitulo('');
+      setNvDesc('');
+      navigate(`/tickets/${creado.id}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreando(false);
+    }
+  }
+
+  function onExportar() {
+    const csv = toCsv(sorted, nombreConsorcio);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    const scope = consorcioFilter ? nombreConsorcio(consorcioFilter).replace(/\W+/g, '-') : 'todos';
+    a.download = `bandeja-${scope}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const sorted = useMemo(() => {
-    return [...tickets].sort((a, b) => {
+    const q = busqueda.trim().toLowerCase();
+    const filtrados = q
+      ? tickets.filter(
+          (t) =>
+            t.titulo.toLowerCase().includes(q) ||
+            t.descripcionNormalizada.toLowerCase().includes(q) ||
+            t.id.toLowerCase().startsWith(q),
+        )
+      : tickets;
+    return [...filtrados].sort((a, b) => {
       const ua = URGENCIA_RANK[a.urgencia] ?? 99;
       const ub = URGENCIA_RANK[b.urgencia] ?? 99;
       if (ua !== ub) return ua - ub;
       if (a.votosCount !== b.votosCount) return b.votosCount - a.votosCount;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [tickets]);
+  }, [tickets, busqueda]);
 
   const countByEstado = useMemo(() => {
     const m: Record<string, number> = {};
@@ -120,8 +245,20 @@ export function BandejaPage(): JSX.Element {
         subtitle={`${sinTriar} sin triar · IA pre-clasifica cada nuevo reporte`}
         actions={
           <>
-            <button type="button" className="btn ghost"><Icons.filter size={14} />Exportar</button>
-            <button type="button" className="btn primary"><Icons.plus size={14} sw={2.2} />Nuevo reporte</button>
+            <button type="button" className="btn ghost" onClick={onExportar} disabled={sorted.length === 0}>
+              <Icons.filter size={14} />Exportar CSV
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                setNvConsorcio(consorcioFilter || consorcios[0]?.id || '');
+                setShowNuevo((v) => !v);
+              }}
+              disabled={consorcios.length === 0}
+            >
+              <Icons.plus size={14} sw={2.2} />{showNuevo ? 'Cancelar' : 'Nuevo reporte'}
+            </button>
           </>
         }
       />
@@ -178,9 +315,98 @@ export function BandejaPage(): JSX.Element {
               ))}
             </div>
           </div>
+          <div className="filter-divider" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="uppercase">Buscar</span>
+            {/* Filtra sobre lo ya cargado: título, descripción y prefijo del id.
+                La API acota por consorcio y estado; el texto se resuelve acá
+                para no pedir de nuevo en cada tecla. */}
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Título, texto o #id"
+              style={{ height: 32, minWidth: 200 }}
+            />
+            {busqueda && (
+              <button type="button" className="btn ghost sm" onClick={() => setBusqueda('')}>Limpiar</button>
+            )}
+          </div>
           <div className="spacer" />
           <span style={{ fontSize: 12, color: 'var(--cf-ink-3)' }}>{sorted.length} resultados</span>
         </div>
+
+        {showNuevo && (
+          <section style={{ paddingTop: 0 }}>
+            <form className="form-grid card" onSubmit={onCrearTicket}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Cargar un reporte a mano</div>
+              <div className="muted small">
+                Para lo que llega por teléfono, en persona o en la reunión de consorcio. Queda sin
+                reportante: el ticket es de la administración.
+              </div>
+              <label>
+                <span>Consorcio</span>
+                <select value={nvConsorcio} onChange={(e) => setNvConsorcio(e.target.value)} required>
+                  <option value="">Elegí un consorcio…</option>
+                  {consorcios.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Tipo</span>
+                <select value={nvTipo} onChange={(e) => setNvTipo(e.target.value as TicketTipo)}>
+                  <option value="INFRAESTRUCTURA">Infraestructura</option>
+                  <option value="CONDUCTA">Conducta</option>
+                </select>
+              </label>
+              {nvTipo === 'INFRAESTRUCTURA' && (
+                <label>
+                  <span>Origen</span>
+                  <select value={nvOrigen} onChange={(e) => setNvOrigen(e.target.value as TicketOrigen)}>
+                    <option value="ESPACIO_COMUN">Espacio común — lo ven todos los vecinos</option>
+                    <option value="UNIDAD">Unidad — solo la administración y sus ocupantes</option>
+                  </select>
+                </label>
+              )}
+              {nvTipo === 'INFRAESTRUCTURA' && nvOrigen === 'UNIDAD' && (
+                <label>
+                  <span>Unidad afectada</span>
+                  <select value={nvUnidad} onChange={(e) => setNvUnidad(e.target.value)} required>
+                    <option value="">Elegí una unidad…</option>
+                    {nvUnidades.map((u) => (
+                      <option key={u.id} value={u.id}>{u.etiqueta}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {nvTipo === 'CONDUCTA' && (
+                <div className="muted small">
+                  La unidad señalada se confirma al validar el ticket, no ahora.
+                </div>
+              )}
+              <label>
+                <span>Urgencia</span>
+                <select value={nvUrgencia} onChange={(e) => setNvUrgencia(e.target.value as TicketUrgencia)}>
+                  <option value="CRITICA">Crítica</option>
+                  <option value="ALTA">Alta</option>
+                  <option value="MEDIA">Media</option>
+                  <option value="BAJA">Baja</option>
+                </select>
+              </label>
+              <label>
+                <span>Título</span>
+                <input value={nvTitulo} onChange={(e) => setNvTitulo(e.target.value)} required minLength={3} maxLength={140} />
+              </label>
+              <label>
+                <span>Qué pasó</span>
+                <textarea rows={3} value={nvDesc} onChange={(e) => setNvDesc(e.target.value)} required maxLength={4000} />
+              </label>
+              <button type="submit" className="btn primary" disabled={creando || !nvConsorcio || !nvTitulo || !nvDesc}>
+                {creando ? 'Creando…' : 'Crear reporte'}
+              </button>
+            </form>
+          </section>
+        )}
 
         <div className="inbox-row-head">
           <span />
@@ -217,9 +443,18 @@ export function BandejaPage(): JSX.Element {
                   {t.tipo === 'CONDUCTA' ? 'Conducta' : t.origen === 'ESPACIO_COMUN' ? 'Espacio común' : 'Unidad'} · {relativeTime(t.createdAt)}
                 </div>
               </div>
+              {/* Antes decía "Bot / App" en todos los tickets, incluidos los
+                  que el admin cargaba a mano. `reportanteId` es null justamente
+                  cuando no hubo un residente reportando. */}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--cf-ink-2)' }}>
-                <Icons.whatsapp size={14} stroke="var(--cf-whatsapp-dk)" fill="var(--cf-whatsapp-dk)" />
-                <span>Bot / App</span>
+                {t.reportanteId ? (
+                  <>
+                    <Icons.whatsapp size={14} stroke="var(--cf-whatsapp-dk)" fill="var(--cf-whatsapp-dk)" />
+                    <span>Bot / App</span>
+                  </>
+                ) : (
+                  <span className="muted">Carga manual</span>
+                )}
               </div>
               <div>
                 <span className={`chip ${u.cls}`}>
