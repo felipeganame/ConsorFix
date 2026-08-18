@@ -60,15 +60,29 @@ export class WhatsAppWebhookController {
     const raw = req.rawBody;
     if (!raw || raw.length === 0) throw new BadRequestException('missing body');
 
-    if (secret && !verifyMetaSignature(raw, signature, secret)) {
+    // Fail-closed. Antes la verificación se salteaba cuando el secreto estaba
+    // vacío (`if (secret && !verify)`), así que un deploy sin la variable
+    // aceptaba cualquier payload en silencio: cualquiera podía crear tickets
+    // a nombre de residentes reales. Ahora la falta de secreto es un error.
+    if (!secret) {
+      this.log.error('WHATSAPP_APP_SECRET no configurado: se rechaza el webhook');
+      throw new UnauthorizedException('webhook signature not configured');
+    }
+    if (!verifyMetaSignature(raw, signature, secret)) {
       throw new UnauthorizedException('invalid signature');
     }
 
     const inbound = this.provider.parseWebhook(req.body);
     if (inbound.length === 0) return { status: 'ok', kind: 'non-message' };
 
+    // Idempotencia real (regla 3). El UNIQUE(provider, wamid) ya evitaba la
+    // fila duplicada, pero el encolado corría igual: una reentrega de Meta
+    // —que ocurre ante cualquier timeout o 5xx— se procesaba de nuevo y
+    // corrompía la sesión del bot, interpretándose como respuesta del usuario.
+    // Ahora solo seguimos con los mensajes que realmente insertamos.
+    const nuevos: typeof inbound = [];
     for (const m of inbound) {
-      await systemDb
+      const ins = await systemDb
         .insert(webhookEvent)
         .values({
           provider: 'whatsapp',
@@ -77,10 +91,13 @@ export class WhatsAppWebhookController {
           payload: m,
           estado: 'RECIBIDO',
         })
-        .onConflictDoNothing({ target: [webhookEvent.provider, webhookEvent.wamid] });
+        .onConflictDoNothing({ target: [webhookEvent.provider, webhookEvent.wamid] })
+        .returning({ wamid: webhookEvent.wamid });
+      if (ins.length > 0) nuevos.push(m);
+      else this.log.log({ wamid: m.wamid }, 'reentrega ignorada (wamid ya recibido)');
     }
 
-    for (const m of inbound) {
+    for (const m of nuevos) {
       if (this.fallback) {
         setImmediate(() => {
           this.bot.handle(m).catch((err) => {
@@ -109,6 +126,6 @@ export class WhatsAppWebhookController {
       }
     }
 
-    return { status: 'ok', received: inbound.length };
+    return { status: 'ok', received: inbound.length, procesados: nuevos.length };
   }
 }
