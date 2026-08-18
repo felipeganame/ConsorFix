@@ -237,6 +237,7 @@ export function BandejaPage(): JSX.Element {
         : `${(ttrMin / (60 * 24)).toFixed(1)} d`
     : '—';
   const gastoARS = metrics?.costosConfirmados.find((c) => c.moneda === 'ARS')?.total ?? 0;
+  const ambito = consorcioFilter ? 'en este consorcio' : 'en toda la administración';
 
   return (
     <>
@@ -269,7 +270,9 @@ export function BandejaPage(): JSX.Element {
             <div className="kpi">
               <div className="kpi-label">Sin triar</div>
               <div className="kpi-value">{sinTriar}</div>
-              <div className="kpi-delta">en este consorcio</div>
+              {/* Decía "en este consorcio" siempre, también con el filtro en
+                  "Todos", donde el número es de toda la administración. */}
+              <div className="kpi-delta">{ambito}</div>
             </div>
             <div className="kpi">
               <div className="kpi-label">Alta urgencia</div>

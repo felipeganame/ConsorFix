@@ -47,11 +47,17 @@ export function UnidadesPage(): JSX.Element {
       .catch((e) => setError(e.message));
   }, [searchParams]);
 
+  // Acá además hay un caso propio: sin consorcio elegido no hay nada que cargar,
+  // y eso tampoco es "sin unidades".
+  const [cargando, setCargando] = useState(false);
+
   function load() {
     if (!consorcioId) return;
+    setCargando(true);
     listUnidades(consorcioId)
       .then(setUnidades)
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
   }
   useEffect(load, [consorcioId]);
 
@@ -158,7 +164,17 @@ export function UnidadesPage(): JSX.Element {
             </thead>
             <tbody>
               {unidades.length === 0 && (
-                <tr><td colSpan={3} className="muted center">Sin unidades en este consorcio.</td></tr>
+                <tr>
+                  <td colSpan={3} className="muted center">
+                    {!consorcioId
+                      ? 'Elegí un consorcio.'
+                      : cargando
+                        ? 'Cargando…'
+                        : error
+                          ? 'No se pudo cargar la lista.'
+                          : 'Sin unidades en este consorcio.'}
+                  </td>
+                </tr>
               )}
               {unidades.map((u) => (
                 <tr

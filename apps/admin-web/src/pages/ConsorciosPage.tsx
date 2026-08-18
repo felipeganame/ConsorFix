@@ -24,8 +24,18 @@ export function ConsorciosPage(): JSX.Element {
   const [edNombre, setEdNombre] = useState('');
   const [edDireccion, setEdDireccion] = useState('');
 
+  // `cargando` no es decorativo: sin él la tabla afirmaba "Sin consorcios
+  // cargados" mientras el pedido estaba en vuelo, y si fallaba mostraba el error
+  // Y ADEMÁS la afirmación de que no hay ninguno. Son tres estados distintos:
+  // no sé todavía, falló, o realmente no hay.
+  const [cargando, setCargando] = useState(true);
+
   function load() {
-    listConsorcios().then(setItems).catch((e) => setError(e.message));
+    setCargando(true);
+    listConsorcios()
+      .then(setItems)
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
   }
   useEffect(load, []);
 
@@ -130,7 +140,9 @@ export function ConsorciosPage(): JSX.Element {
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted center">Sin consorcios cargados.</td>
+                  <td colSpan={5} className="muted center">
+                    {cargando ? 'Cargando…' : error ? 'No se pudo cargar la lista.' : 'Sin consorcios cargados.'}
+                  </td>
                 </tr>
               )}
               {items.map((c) => (

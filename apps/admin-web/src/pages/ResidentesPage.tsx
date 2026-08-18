@@ -32,8 +32,16 @@ export function ResidentesPage(): JSX.Element {
   const [crearUnidades, setCrearUnidades] = useState(true);
   const [informe, setInforme] = useState<ResultadoImport | null>(null);
 
+  // Mismo criterio que en Consorcios: "sin vecinos" solo se afirma cuando se
+  // sabe. Antes se afirmaba durante la carga y también cuando el pedido fallaba.
+  const [cargando, setCargando] = useState(true);
+
   function load() {
-    listResidentes().then(setItems).catch((e) => setError(e.message));
+    setCargando(true);
+    listResidentes()
+      .then(setItems)
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
   }
   useEffect(load, []);
   useEffect(() => {
@@ -270,7 +278,11 @@ export function ResidentesPage(): JSX.Element {
             </thead>
             <tbody>
               {items.length === 0 && (
-                <tr><td colSpan={4} className="muted center">Sin vecinos cargados.</td></tr>
+                <tr>
+                  <td colSpan={4} className="muted center">
+                    {cargando ? 'Cargando…' : error ? 'No se pudo cargar la lista.' : 'Sin vecinos cargados.'}
+                  </td>
+                </tr>
               )}
               {items.map((r) => (
                 <tr key={r.id}>

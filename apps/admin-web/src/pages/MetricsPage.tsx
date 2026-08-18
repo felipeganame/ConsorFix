@@ -95,7 +95,9 @@ export function MetricsPage(): JSX.Element {
                 <div className="kpi">
                   <div className="kpi-label">Tickets totales</div>
                   <div className="kpi-value">{totalTickets}</div>
-                  <div className="kpi-delta">en este consorcio</div>
+                  <div className="kpi-delta">
+                    {consorcioFilter ? 'en este consorcio' : 'en toda la administración'}
+                  </div>
                 </div>
                 <div className="kpi">
                   <div className="kpi-label">Tiempo medio resol.</div>

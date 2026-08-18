@@ -29,14 +29,22 @@ export function AdministracionesPage(): JSX.Element {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
 
+  const esSuper = user?.kind === 'SUPER_ADMIN';
+  const [cargando, setCargando] = useState(esSuper);
+
   function load() {
+    // La API responde 403 a un ADMIN, así que no se pide: abajo se muestra el
+    // aviso de que la sección no le corresponde y el pedido no aportaría nada.
+    if (!esSuper) return;
+    setCargando(true);
     listTenants()
       .then(setItems)
-      .catch((e) => setError((e as Error).message));
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setCargando(false));
   }
-  useEffect(load, []);
+  useEffect(load, [esSuper]);
 
-  if (user?.kind !== 'SUPER_ADMIN') {
+  if (!esSuper) {
     return (
       <>
         <Topbar title="Administraciones" />
@@ -139,7 +147,9 @@ export function AdministracionesPage(): JSX.Element {
 
           <div className="card">
             {items.length === 0 ? (
-              <div className="muted small">Todavía no hay administraciones.</div>
+              <div className="muted small">
+                {cargando ? 'Cargando…' : error ? 'No se pudo cargar la lista.' : 'Todavía no hay administraciones.'}
+              </div>
             ) : (
               <table className="grid">
                 <thead>
