@@ -60,11 +60,27 @@ export class BotService {
       return { status: 'unsupported-kind' };
     }
 
-    const resi = await this.findResidente(inbound.from);
-    if (!resi) {
+    const lookup = await this.findResidente(inbound.from);
+    if (lookup.kind === 'none') {
       await this.reply(inbound.from, 'Hola. Tu número no está registrado. Contactá a tu administración.');
       return { status: 'unregistered' };
     }
+    if (lookup.kind === 'ambiguous') {
+      // Se prefiere no atender antes que atender al tenant equivocado: un
+      // reporte imputado a otra administración es una fuga de datos entre
+      // clientes, y encima el residente no se enteraría.
+      this.log.error(
+        { phone: inbound.from, tenants: lookup.tenants },
+        'telefono registrado en mas de un tenant: no se puede rutear sin ambiguedad',
+      );
+      await this.reply(
+        inbound.from,
+        'Tu número figura en más de una administración, así que no puedo saber a cuál corresponde este reporte. Contactá a tu administración para que lo resuelvan.',
+      );
+      await this.markWebhookProcessed(inbound.wamid);
+      return { status: 'ambiguous-tenant' };
+    }
+    const resi = lookup.residente;
 
     // Sesión activa: ruteo según step.
     const session = await getActiveSession(inbound.from);
@@ -328,13 +344,38 @@ export class BotService {
     return { status: 'created', ticketId: t.id };
   }
 
-  private async findResidente(phone: string): Promise<{ id: string; tenantId: string } | undefined> {
+  /**
+   * Resuelve teléfono → residente, y con eso el tenant. Es el punto de ruteo:
+   * acá todavía no hay tenant conocido, así que la consulta es necesariamente
+   * cross-tenant y corre por `systemDb` (RLS no aplica).
+   *
+   * Por eso mismo importa el `LIMIT 1` que había antes: la constraint es
+   * `UNIQUE(tenant_id, telefono_e164)`, o sea que el MISMO teléfono puede
+   * existir en dos administraciones distintas —alguien que vive en un edificio
+   * y tiene una oficina en otro, administrados por empresas distintas—. Con
+   * `limit(1)` el bot elegía una arbitrariamente y le atribuía el reporte al
+   * tenant equivocado: exactamente el cruce que prohíbe la regla 1.
+   *
+   * Devuelve la ambigüedad en vez de resolverla a la suerte. Desambiguar de
+   * verdad requiere que el bot pregunte por administración, y hoy no se puede:
+   * `sesion_bot` tiene `UNIQUE(telefono_e164)` global, así que el modelo de
+   * sesión no distingue tenants. Es una decisión de diseño, no un parche.
+   */
+  private async findResidente(
+    phone: string,
+  ): Promise<
+    | { kind: 'found'; residente: { id: string; tenantId: string } }
+    | { kind: 'none' }
+    | { kind: 'ambiguous'; tenants: string[] }
+  > {
     const rows = await systemDb
       .select({ id: residente.id, tenantId: residente.tenantId })
       .from(residente)
-      .where(eq(residente.telefonoE164, phone))
-      .limit(1);
-    return rows[0];
+      .where(eq(residente.telefonoE164, phone));
+
+    if (rows.length === 0) return { kind: 'none' };
+    if (rows.length === 1) return { kind: 'found', residente: rows[0]! };
+    return { kind: 'ambiguous', tenants: rows.map((r) => r.tenantId) };
   }
 
   private async consorciosDelResidente(
