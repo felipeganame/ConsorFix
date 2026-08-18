@@ -1,15 +1,12 @@
-import { AnthropicClassifier } from './anthropic-classifier.js';
+import { SdkClassifier } from './sdk-classifier.js';
+import { SdkEmbedder } from './sdk-embedder.js';
 import { AnthropicVision } from './anthropic-vision.js';
-import { GoogleClassifier } from './google-classifier.js';
 import { MockClassifier } from './mock-classifier.js';
 import { MockEmbedder } from './mock-embedder.js';
 import { MockTranscriber } from './mock-transcriber.js';
 import { MockVision } from './mock-vision.js';
-import { OpenAIClassifier } from './openai-classifier.js';
-import { OpenAIEmbedder } from './openai-embedder.js';
 import { OpenAITranscriber } from './openai-transcriber.js';
 import { OpenAIVision } from './openai-vision.js';
-import { VoyageEmbedder } from './voyage-embedder.js';
 import type { IClassifier, IEmbedder, IImageVision, ITranscriber } from './ports.js';
 
 export type ClassifierProvider = 'mock' | 'openai' | 'anthropic' | 'google';
@@ -36,17 +33,17 @@ export function createClassifier(): IClassifier {
     case 'openai': {
       const key = process.env.OPENAI_API_KEY;
       if (!key) return warnFallback('OPENAI_API_KEY', new MockClassifier());
-      return new OpenAIClassifier(key);
+      return new SdkClassifier('openai', key);
     }
     case 'anthropic': {
       const key = process.env.ANTHROPIC_API_KEY;
       if (!key) return warnFallback('ANTHROPIC_API_KEY', new MockClassifier());
-      return new AnthropicClassifier(key);
+      return new SdkClassifier('anthropic', key);
     }
     case 'google': {
       const key = process.env.GOOGLE_API_KEY;
       if (!key) return warnFallback('GOOGLE_API_KEY', new MockClassifier());
-      return new GoogleClassifier(key);
+      return new SdkClassifier('google', key);
     }
     case 'mock':
     default:
@@ -60,12 +57,16 @@ export function createEmbedder(): IEmbedder {
     case 'openai': {
       const key = process.env.OPENAI_API_KEY;
       if (!key) return warnFallback('OPENAI_API_KEY (embedder)', new MockEmbedder());
-      return new OpenAIEmbedder(key);
+      return new SdkEmbedder(key);
     }
     case 'voyage': {
-      const key = process.env.VOYAGE_API_KEY;
-      if (!key) return warnFallback('VOYAGE_API_KEY', new MockEmbedder());
-      return new VoyageEmbedder(key);
+      // Voyage NO soporta output_dimension=384 (acepta 256/512/1024) y el
+      // adaptador trunca y rellena con ceros, lo que rompe la norma del vector
+      // y por lo tanto el coseno del dedup. Está mal hoy, así que no se ofrece
+      // hasta arreglarlo o migrar la columna.
+      // eslint-disable-next-line no-console
+      console.warn('[ai] el embedder de Voyage produce vectores inválidos para vector(384) — usando mock');
+      return new MockEmbedder();
     }
     case 'mock':
     default:
