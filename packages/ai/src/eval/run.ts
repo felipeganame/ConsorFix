@@ -26,6 +26,9 @@ import { computeTaskMetrics, pct, renderTask, type Par, type TaskMetrics } from 
 // Criterios de salida de la Fase 3 (docs/05) y gap G4 (docs/01 §85).
 // La urgencia se mide y se reporta, pero los docs no le fijan umbral formal.
 const UMBRALES: Record<string, number> = {
+  // El tipo decide el circuito entero (anonimato, votos, a quién se acusa), así
+  // que equivocarlo es más caro que equivocar una categoría: se le exige más.
+  tipo: 0.95,
   origen: 0.85,
   categoria: 0.9,
 };
@@ -112,7 +115,7 @@ async function main(): Promise<void> {
   });
   const elapsedMs = Date.now() - t0;
 
-  const tareas: Array<'origen' | 'categoria' | 'urgencia'> = ['origen', 'categoria', 'urgencia'];
+  const tareas: Array<'tipo' | 'origen' | 'categoria' | 'urgencia'> = ['tipo', 'origen', 'categoria', 'urgencia'];
   const metricas: TaskMetrics[] = [];
   const fallos: Fallo[] = [];
 

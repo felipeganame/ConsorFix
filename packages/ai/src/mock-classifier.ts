@@ -36,8 +36,15 @@ export class MockClassifier implements IClassifier {
         ? 'ESPACIO_COMUN'
         : 'UNIDAD';
 
+    // El mock deriva el tipo de la categoría: es una heurística pobre a
+    // propósito, para que la baseline del eval no se infle.
+    const tipo = categoria === 'conducta' ? 'CONDUCTA' : 'INFRAESTRUCTURA';
+    const unidadMencionada = /\b(?:del?|la|el)\s+(\d{1,3}\s*[°ºa-zA-Z]{0,3}|lote\s*\d{1,3})\b/i.exec(text);
+
     const candidate = {
       titulo: text.slice(0, 80).trim() || 'Reporte sin descripción',
+      tipo,
+      ...(tipo === 'CONDUCTA' && unidadMencionada ? { unidad_reportada_texto: unidadMencionada[1]!.trim() } : {}),
       descripcion_normalizada: text.trim(),
       categoria,
       origen,

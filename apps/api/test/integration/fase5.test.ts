@@ -65,6 +65,7 @@ beforeAll(async () => {
   // Ticket de CONDUCTA contra la unidad del residente, con avisos/sanciones.
   ticketConducta = (await systemDb.insert(ticket).values({
     tenantId: ten.id, consorcioId: consA.id, unidadId: uniA.id, reportanteId: resi.id,
+    unidadReportadaId: uniA.id,
     tipo: 'CONDUCTA', urgencia: 'MEDIA', estado: 'VALIDADO',
     origen: null, titulo: `${PREFIX}conducta`, descripcionNormalizada: 'ruidos',
   }).returning())[0]!;

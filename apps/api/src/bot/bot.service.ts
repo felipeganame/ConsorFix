@@ -226,7 +226,7 @@ export class BotService {
       consorcioId: inputs.consorcioId,
       unidadId: inputs.unidadId,
       reportanteId: resi.id,
-      tipo: 'INFRAESTRUCTURA',
+      tipo: inputs.classifiedTipo ?? 'INFRAESTRUCTURA',
       urgencia: inputs.classifiedUrgencia,
       origenSugerido: inputs.classifiedOrigen,
       titulo: inputs.classifiedTitulo,
@@ -299,6 +299,7 @@ export class BotService {
               classifiedCategoria: classified.categoria,
               classifiedOrigen: classified.origen,
               classifiedUrgencia: classified.urgencia,
+              classifiedTipo: classified.tipo,
               classifiedConfianza: classified.confianza,
               classifiedModelo: classified.modelo,
               classifiedPromptVersion: classified.prompt_version,
@@ -323,7 +324,12 @@ export class BotService {
       consorcioId,
       unidadId,
       reportanteId: resi.id,
-      tipo: 'INFRAESTRUCTURA',
+      // RF-F01 opción A: la IA propone el tipo, el admin decide. En CONDUCTA
+      // NO se imputa unidad acusada acá: el texto libre del residente ("el del
+      // 5B") no es una unidad verificada, y atribuirle una denuncia a un vecino
+      // por lo que dedujo un modelo sería exactamente lo que la regla 4
+      // prohíbe. Queda en la sugerencia para que el admin la confirme.
+      tipo: classified.tipo,
       urgencia: classified.urgencia,
       origenSugerido: classified.origen,
       titulo: classified.titulo,
@@ -339,7 +345,9 @@ export class BotService {
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
-      `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
+      classified.tipo === 'CONDUCTA'
+        ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó. El administrador lo va a revisar.`
+        : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
     );
     return { status: 'created', ticketId: t.id };
   }

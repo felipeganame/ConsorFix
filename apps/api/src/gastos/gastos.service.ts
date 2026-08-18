@@ -47,6 +47,8 @@ export class GastosService {
           tipo: t.tipo,
           origen: t.origen,
           unidadId: t.unidadId,
+          unidadReportadaId: t.unidadReportadaId,
+          reportanteId: t.reportanteId,
           consorcioId: t.consorcioId,
         });
         // 404 y no 403: un 403 confirmaría que el ticket existe.
@@ -106,6 +108,8 @@ export class GastosService {
           tipo: t.tipo,
           origen: t.origen,
           unidadId: t.unidadId,
+          unidadReportadaId: t.unidadReportadaId,
+          reportanteId: t.reportanteId,
           consorcioId: t.consorcioId,
         });
         if (!puede) throw new NotFoundException('ticket not found');

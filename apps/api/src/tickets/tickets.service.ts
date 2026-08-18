@@ -129,6 +129,8 @@ export class TicketsService {
         tipo: t.tipo,
         origen: t.origen,
         unidadId: t.unidadId,
+        unidadReportadaId: t.unidadReportadaId,
+        reportanteId: t.reportanteId,
         consorcioId: t.consorcioId,
       });
       if (!visible) throw new NotFoundException('ticket not found');
@@ -148,7 +150,12 @@ export class TicketsService {
     adminId: string,
     id: string,
     to: TicketState,
-    opts: { nota?: string; origen?: 'UNIDAD' | 'ESPACIO_COMUN'; categoriaId?: string } = {},
+    opts: {
+      nota?: string;
+      origen?: 'UNIDAD' | 'ESPACIO_COMUN';
+      categoriaId?: string;
+      unidadReportadaId?: string;
+    } = {},
   ) {
     const updated = await withTenant(tenantId, async (tx) => {
       const rows = await tx.select().from(ticket).where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id))).limit(1);
@@ -162,11 +169,40 @@ export class TicketsService {
         throw new BadRequestException('VALIDADO requiere `origen` (UNIDAD | ESPACIO_COMUN)');
       }
 
+      // RF-F01 opción A: en CONDUCTA el admin confirma a quién se acusa. La IA
+      // pudo sugerirlo desde el texto ("el del 5B"), pero atribuirle una
+      // denuncia a un vecino por una deducción del modelo es justo lo que la
+      // regla 4 prohíbe: acá decide una persona.
+      //
+      // Sin unidad acusada el ticket es inservible: no lo ve nadie y no se le
+      // pueden registrar avisos ni sanciones (P5). Por eso se exige, y además
+      // hay un CHECK en la base que lo respalda (migración 0004).
+      const unidadReportada = opts.unidadReportadaId ?? t.unidadReportadaId;
+      if (to === 'VALIDADO' && t.tipo === 'CONDUCTA' && !unidadReportada) {
+        throw new BadRequestException(
+          'validar una CONDUCTA requiere `unidad_reportada_id`: la unidad del vecino señalado',
+        );
+      }
+      if (opts.unidadReportadaId) {
+        const u = (
+          await tx
+            .select({ consorcioId: unidad.consorcioId })
+            .from(unidad)
+            .where(and(eq(unidad.tenantId, tenantId), eq(unidad.id, opts.unidadReportadaId)))
+            .limit(1)
+        )[0];
+        if (!u) throw new BadRequestException('unidad reportada inexistente');
+        if (u.consorcioId !== t.consorcioId) {
+          throw new BadRequestException('la unidad reportada no pertenece al consorcio del ticket');
+        }
+      }
+
       const patch: Partial<typeof ticket.$inferInsert> = { estado: to };
       if (to === 'VALIDADO') {
         patch.validatedAt = new Date();
         if (opts.origen) patch.origen = opts.origen;
         if (opts.categoriaId) patch.categoriaId = opts.categoriaId;
+        if (opts.unidadReportadaId) patch.unidadReportadaId = opts.unidadReportadaId;
       }
       if (to === 'SOLUCIONADO') patch.solucionadoAt = new Date();
 
@@ -189,6 +225,12 @@ export class TicketsService {
         }
         if (opts.categoriaId && opts.categoriaId !== t.categoriaId) {
           correccion['categoriaId'] = { sugerido: t.categoriaId, final: opts.categoriaId };
+        }
+        if (opts.unidadReportadaId && opts.unidadReportadaId !== t.unidadReportadaId) {
+          correccion['unidadReportadaId'] = {
+            sugerido: t.unidadReportadaId,
+            final: opts.unidadReportadaId,
+          };
         }
         if (Object.keys(correccion).length > 0) {
           await tx

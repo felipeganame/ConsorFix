@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import { Categoria } from '../schemas.js';
+import { Categoria, TipoTicket } from '../schemas.js';
 import { Origen, Urgencia } from '@consorciofix/contracts';
 
 /**
@@ -19,12 +19,13 @@ export const EvalCase = z.object({
   text: z.string().min(1),
   expected: z
     .object({
+      tipo: TipoTicket.optional(),
       origen: Origen.optional(),
       categoria: Categoria.optional(),
       urgencia: Urgencia.optional(),
     })
-    .refine((e) => e.origen || e.categoria || e.urgencia, {
-      message: 'expected debe fijar al menos una de origen/categoria/urgencia',
+    .refine((e) => e.tipo || e.origen || e.categoria || e.urgencia, {
+      message: 'expected debe fijar al menos una de tipo/origen/categoria/urgencia',
     }),
   /** `synthetic` = escrito a mano; `piloto` = caso real anonimizado (G16). */
   source: z.enum(['synthetic', 'piloto']).default('synthetic'),
@@ -64,7 +65,7 @@ export function loadDataset(path: string): EvalCase[] {
 
 /** Reparto de casos por clase, para detectar un dataset desbalanceado. */
 export function resumenDataset(casos: EvalCase[]): string {
-  const contar = (key: 'origen' | 'categoria' | 'urgencia') => {
+  const contar = (key: 'tipo' | 'origen' | 'categoria' | 'urgencia') => {
     const m = new Map<string, number>();
     for (const c of casos) {
       const v = c.expected[key];
@@ -78,6 +79,7 @@ export function resumenDataset(casos: EvalCase[]): string {
   const piloto = casos.filter((c) => c.source === 'piloto').length;
   return [
     `  casos: ${casos.length} (sintéticos ${casos.length - piloto}, piloto ${piloto})`,
+    `  tipo:      ${contar('tipo')}`,
     `  origen:    ${contar('origen')}`,
     `  categoria: ${contar('categoria')}`,
     `  urgencia:  ${contar('urgencia')}`,
