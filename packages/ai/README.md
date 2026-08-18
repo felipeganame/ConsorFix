@@ -74,14 +74,33 @@ sugerencia de la IA y —cuando el admin corrige al validar— el par
 sugerido/corregido en `corregido_por_admin`. Marcarlos con `"source": "piloto"`
 y anonimizar antes de versionarlos.
 
+## Estado de la migración
+
+Clasificador y embedder corren sobre **Vercel AI SDK** (`ai@^6`, proveedores
+`@^3`), detrás de los mismos puertos. Se fija la v6 y no la 7 porque la 7 es
+ESM-only y pide Node ≥22, y este monorepo es CommonJS con Node ≥20.
+
+Transcripción y visión siguen con `fetch` a mano: funcionan, y migrarlas no
+aporta lo mismo que en el clasificador (ahí el SDK reemplazó tres formas
+distintas de arrancarle JSON estructurado al modelo).
+
 ## Deudas conocidas
 
-- **`VoyageEmbedder` está roto conceptualmente**: pide `output_dimension: 384`,
-  dimensión que Voyage no soporta (acepta 256/512/1024), y después trunca y
-  rellena con ceros. Eso rompe la norma del vector y por lo tanto la similitud
-  por coseno. No usarlo hasta migrarlo o descartarlo.
+- **Voyage está desactivado.** Pedía `output_dimension: 384`, dimensión que
+  Voyage no soporta (acepta 256/512/1024), y después truncaba y rellenaba con
+  ceros: eso rompe la norma del vector y por lo tanto la similitud coseno del
+  dedup. La factory cae a mock con un warning si se lo elige. Para reactivarlo
+  hay que migrar la columna a 512 o 1024.
 - **Los adaptadores de visión nunca persisten la versión del prompt** por una
-  condición invertida, lo que incumple la regla 9 para esa capacidad.
-- **Modelos por defecto de 2024** en varios adaptadores.
-- **Sin reintentos**: ningún adaptador reintenta ante un error transitorio del
-  proveedor. Es una de las razones para migrar a Vercel AI SDK, que los trae.
+  condición invertida (`...(opts.promptVersion ? {} : ...)`). Incumple la
+  regla 9 para esa capacidad. `ImageVisionOutput` tampoco tiene el campo.
+- **Sin telemetría de costo (RF-C07).** `generateObject` y `embed` ya devuelven
+  `usage` con tokens, pero el puerto no lo expone y la tabla `clasificacion_ia`
+  no tiene columnas de tokens ni costo. Es lo que falta para cerrar RF-C07.
+- **El índice vectorial probablemente no se usa.** Se crea como `ivfflat` sobre
+  una tabla vacía, y ese tipo de índice necesita datos al crearse para entrenar
+  sus centroides. Conviene medirlo con `EXPLAIN ANALYZE` antes de afirmar nada
+  en la tesis, y evaluar HNSW, que no requiere entrenamiento.
+- **La capa heurística del dedup (G14) no existe.** `dedup.ts` acepta
+  `categoria` y nunca la usa en el SQL — y no habría con qué filtrar, porque al
+  crear el ticket no se setea `categoria_id`.
