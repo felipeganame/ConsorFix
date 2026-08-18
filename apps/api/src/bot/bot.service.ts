@@ -59,6 +59,21 @@ export class BotService {
   private readonly vision = createVision();
   private readonly messaging = createWhatsAppProvider();
 
+  /**
+   * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
+   * con y sin barra: por WhatsApp nadie escribe "/estado".
+   */
+  private static readonly COMANDOS_SET = new Set([
+    'estado',
+    'estados',
+    'mis reportes',
+    'ayuda',
+    'help',
+    'hola',
+    'menu',
+    'menú',
+  ]);
+
   async handle(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
     if (inbound.kind === 'other') {
       await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.');
@@ -108,6 +123,13 @@ export class BotService {
     inbound: InboundMessage,
     resi: { id: string; tenantId: string },
   ): Promise<{ status: string; ticketId?: string }> {
+
+    // Comandos (RF-B10). Va ANTES de la sesión y del pipeline de reporte:
+    // hasta ahora escribir "estado" creaba un ticket titulado "estado".
+    const comando = (inbound.text ?? '').trim().toLowerCase().replace(/^\//, '');
+    if (inbound.kind === 'text' && BotService.COMANDOS_SET.has(comando)) {
+      return this.responderComando(inbound, resi, comando);
+    }
 
     // Sesión activa: ruteo según step.
     const session = await getActiveSession(inbound.from);
@@ -534,6 +556,66 @@ export class BotService {
       .update(webhookEvent)
       .set({ estado: 'PROCESADO', processedAt: new Date() })
       .where(eq(webhookEvent.wamid, wamid));
+  }
+
+  /**
+   * RF-B10: consulta del estado de los reportes propios y ayuda.
+   *
+   * Solo muestra tickets donde el residente es el reportante, así que no hace
+   * falta pasar por la matriz de visibilidad: uno siempre puede ver lo suyo.
+   */
+  private async responderComando(
+    inbound: InboundMessage,
+    resi: { id: string; tenantId: string },
+    comando: string,
+  ): Promise<{ status: string }> {
+    if (comando === 'ayuda' || comando === 'help' || comando === 'hola' || comando === 'menu' || comando === 'menú') {
+      await this.reply(
+        inbound.from,
+        [
+          'Hola. Contame qué problema hay y lo registro — podés escribirlo, mandar un audio o una foto.',
+          '',
+          'Comandos:',
+          '• *estado* — cómo vienen tus reportes',
+          '• *ayuda* — este mensaje',
+        ].join('\n'),
+        inbound,
+      );
+      return { status: 'comando-ayuda' };
+    }
+
+    const mios = await systemDb
+      .select({
+        id: ticket.id,
+        titulo: ticket.titulo,
+        estado: ticket.estado,
+        createdAt: ticket.createdAt,
+      })
+      .from(ticket)
+      .where(and(eq(ticket.tenantId, resi.tenantId), eq(ticket.reportanteId, resi.id)))
+      .orderBy(sql`${ticket.createdAt} DESC`)
+      .limit(5);
+
+    if (mios.length === 0) {
+      await this.reply(inbound.from, 'Todavía no tenés reportes. Contame si hay algún problema y lo registro.', inbound);
+      return { status: 'comando-estado-vacio' };
+    }
+
+    const legible: Record<string, string> = {
+      REGISTRADO: 'esperando validación del administrador',
+      VALIDADO: 'validado, en gestión',
+      SOLUCIONADO: 'solucionado',
+      DESCARTADO: 'descartado por el administrador',
+    };
+    const lineas = mios.map(
+      (t) => `• #${t.id.slice(0, 8)} — ${t.titulo}\n   ${legible[t.estado] ?? t.estado}`,
+    );
+    await this.reply(
+      inbound.from,
+      `Tus últimos ${mios.length} reporte${mios.length === 1 ? '' : 's'}:\n\n${lineas.join('\n')}`,
+      inbound,
+    );
+    return { status: 'comando-estado' };
   }
 
   /**

@@ -140,6 +140,62 @@ export class TicketsService {
   }
 
   /**
+   * Historial del ticket (RF-D02).
+   *
+   * `ticket_evento` se venía escribiendo desde el principio y no había ningún
+   * endpoint que lo leyera: un historial inconsultable no es auditable, que es
+   * justamente lo que el RF pide.
+   *
+   * Para un RESIDENTE se aplica la misma visibilidad que al ticket, y se omite
+   * el autor de los eventos: en CONDUCTA el autor del evento de creación ES el
+   * denunciante, así que exponerlo filtraría por la puerta de atrás lo mismo
+   * que el feed se toma el trabajo de ocultar.
+   */
+  async historial(tenantId: string, ticketId: string, viewer: TicketViewer) {
+    return withTenant(tenantId, async (tx) => {
+      const t = (
+        await tx
+          .select()
+          .from(ticket)
+          .where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, ticketId)))
+          .limit(1)
+      )[0];
+      if (!t) throw new NotFoundException('ticket not found');
+
+      const esAdmin = viewer.kind !== 'RESIDENTE';
+      if (!esAdmin) {
+        const ctx = await loadResidenteCtx(tx, tenantId, viewer.residenteId);
+        const visible = canResidenteSeeTicket(ctx, {
+          tipo: t.tipo,
+          origen: t.origen,
+          unidadId: t.unidadId,
+          unidadReportadaId: t.unidadReportadaId,
+          reportanteId: t.reportanteId,
+          consorcioId: t.consorcioId,
+        });
+        if (!visible) throw new NotFoundException('ticket not found');
+      }
+
+      const eventos = await tx
+        .select()
+        .from(ticketEvento)
+        .where(and(eq(ticketEvento.tenantId, tenantId), eq(ticketEvento.ticketId, ticketId)))
+        .orderBy(ticketEvento.at);
+
+      return eventos.map((e) => ({
+        transicion: e.transicion,
+        estadoAnterior: e.estadoAnterior,
+        estadoNuevo: e.estadoNuevo,
+        nota: e.nota,
+        autorTipo: e.autorTipo,
+        // El autor concreto solo para el admin (ver docblock).
+        ...(esAdmin ? { autorId: e.autorId } : {}),
+        at: e.at,
+      }));
+    });
+  }
+
+  /**
    * Transición de estado por el admin. La máquina de estados vive en
    * `packages/domain` y es la ÚNICA forma legítima de cambiar `estado`.
    * Después del commit, dispara notificaciones (RF-G01/G03) — fire-and-forget,

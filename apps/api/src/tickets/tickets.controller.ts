@@ -90,6 +90,13 @@ export class TicketsController {
     return this.tickets.byId(tid(req), id, viewer(req));
   }
 
+  /** Historial auditable del ticket (RF-D02). */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
+  @Get(':id/historial')
+  async historial(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tickets.historial(tid(req), id, viewer(req));
+  }
+
   @Roles('SUPER_ADMIN', 'ADMIN')
   @Post(':id/transitions')
   async transition(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
