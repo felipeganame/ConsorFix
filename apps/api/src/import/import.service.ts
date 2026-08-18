@@ -26,7 +26,22 @@ export interface FilaError {
 export interface ResultadoImport {
   totalFilas: number;
   validas: number;
+  /** Residentes nuevos creados. */
   insertadas: number;
+  /** Vínculos efectivamente creados (puede diferir de `insertadas`). */
+  vinculosCreados: number;
+  /**
+   * Filas que no crearon nada porque el vínculo ya existía. Se informan
+   * aparte: antes se contaban como insertadas, así que el admin veía "200
+   * insertadas" cuando la base había descartado la mitad.
+   */
+  vinculosYaExistentes: number;
+  /**
+   * Residentes que ya existían por teléfono y se reusaron. Se informa el
+   * nombre del archivo y el que quedó, porque el nombre nuevo NO se aplica:
+   * el admin que sube la planilla corregida creería que actualizó los datos.
+   */
+  reusados: Array<{ fila: number; telefono: string; nombreEnArchivo: string; nombreExistente: string }>;
   errores: FilaError[];
   dryRun: boolean;
   /** Unidades que no existían y se crearon al pasar. */
@@ -157,6 +172,9 @@ export class ImportService {
       totalFilas: parsed.data.length,
       validas: validas.length,
       insertadas: 0,
+      vinculosCreados: 0,
+      vinculosYaExistentes: 0,
+      reusados: [],
       errores,
       dryRun,
       unidadesCreadas: [],
@@ -173,7 +191,7 @@ export class ImportService {
 
       // Segunda pasada de validación: la unidad tiene que existir. Se hace acá
       // porque necesita la base, y su resultado también va al informe.
-      const listas: Array<{ datos: z.infer<typeof Fila>; unidadId: string }> = [];
+      const listas: Array<{ fila: number; datos: z.infer<typeof Fila>; unidadId: string }> = [];
       for (const { fila, datos: v } of validas) {
         const clave = v.unidad.trim().toUpperCase();
         let unidadId = porEtiqueta.get(clave);
@@ -200,26 +218,41 @@ export class ImportService {
           }
           resultado.unidadesCreadas.push(v.unidad.trim());
         }
-        listas.push({ datos: v, unidadId });
+        listas.push({ fila, datos: v, unidadId });
       }
 
       resultado.validas = listas.length;
       if (dryRun || listas.length === 0) return;
 
-      for (const { datos, unidadId } of listas) {
+      for (const { fila, datos, unidadId } of listas) {
         // Un residente puede ya existir (por teléfono) si vive en otra unidad
         // del mismo tenant: en ese caso se reusa y solo se agrega el vínculo.
         const existente = (
           await tx
-            .select({ id: residente.id })
+            .select({ id: residente.id, nombre: residente.nombre, activo: residente.activo })
             .from(residente)
             .where(and(eq(residente.tenantId, tenantId), eq(residente.telefonoE164, datos.telefono)))
             .limit(1)
         )[0];
 
-        const resiId =
-          existente?.id ??
-          (
+        let resiId: string;
+        if (existente) {
+          resiId = existente.id;
+          // Se reusa por teléfono, pero el nombre del archivo NO se aplica: eso
+          // sería una actualización silenciosa de datos personales desde una
+          // planilla. Se informa para que el admin decida.
+          if (existente.nombre !== datos.nombre.trim() || existente.activo === false) {
+            resultado.reusados.push({
+              fila,
+              telefono: datos.telefono,
+              nombreEnArchivo: datos.nombre.trim(),
+              nombreExistente: existente.activo === false
+                ? `${existente.nombre} (DADO DE BAJA)`
+                : existente.nombre,
+            });
+          }
+        } else {
+          resiId = (
             await tx
               .insert(residente)
               .values({
@@ -230,8 +263,14 @@ export class ImportService {
               })
               .returning({ id: residente.id })
           )[0]!.id;
+          resultado.insertadas++;
+        }
 
-        await tx
+        // `returning()` para saber si la base insertó de verdad: el índice único
+        // es (residenteId, unidadId, rol) SIN `activo`, así que reimportar para
+        // reactivar un vínculo dado de baja cae en el DO NOTHING y no hace nada.
+        // Antes se contaba igual como insertado.
+        const vinculo = await tx
           .insert(vinculoResidente)
           .values({
             tenantId,
@@ -240,8 +279,11 @@ export class ImportService {
             rol: datos.rol as 'PROPIETARIO' | 'INQUILINO',
             activo: true,
           })
-          .onConflictDoNothing();
-        resultado.insertadas++;
+          .onConflictDoNothing()
+          .returning({ id: vinculoResidente.id });
+
+        if (vinculo.length > 0) resultado.vinculosCreados++;
+        else resultado.vinculosYaExistentes++;
       }
     });
 

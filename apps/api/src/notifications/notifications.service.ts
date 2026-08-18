@@ -1,10 +1,10 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { and, eq, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { TicketState } from '@consorciofix/domain';
 import type { E164Phone } from '@consorciofix/contracts';
 import { createWhatsAppProvider } from '@consorciofix/messaging';
 import { systemDb } from '../db/client.js';
-import { notificacion, residente, voto } from '../db/schema/index.js';
+import { notificacion, residente, ticket, voto } from '../db/schema/index.js';
 import { sendExpoPush } from './expo-push.js';
 import { pickTemplate } from './templates.js';
 
@@ -67,44 +67,66 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const ahora = new Date();
     const maxIntentos = NotificationsService.BACKOFF_MIN.length;
 
-    const candidatas = await systemDb
-      .select({
-        id: notificacion.id,
-        canal: notificacion.canal,
-        intentos: notificacion.intentos,
-        destinatarioId: notificacion.destinatarioId,
-        plantilla: notificacion.plantilla,
-        ticketId: notificacion.ticketId,
-      })
-      .from(notificacion)
-      .where(
-        and(
-          inArray(notificacion.estado, ['PENDIENTE', 'FALLIDA']),
-          or(isNull(notificacion.proximoIntentoAt), lte(notificacion.proximoIntentoAt, ahora)),
-          lte(notificacion.intentos, maxIntentos - 1),
-        ),
+    // Claim ATÓMICO con FOR UPDATE SKIP LOCKED. Con un SELECT plano, dos
+    // procesos de API —y `onModuleInit` arranca un reaper en CADA uno— tomaban
+    // la misma fila en la misma ventana y la notificación salía duplicada.
+    // El ORDER BY evita además que unas pocas filas envenenadas monopolicen el
+    // cupo de cada pasada y dejen sin atender a las nuevas.
+    const claimed = await systemDb.execute(sql`
+      WITH elegidas AS (
+        SELECT id FROM notificacion
+         WHERE estado IN ('PENDIENTE', 'FALLIDA')
+           AND (proximo_intento_at IS NULL OR proximo_intento_at <= ${ahora})
+           AND intentos < ${maxIntentos}
+         ORDER BY proximo_intento_at ASC NULLS FIRST, created_at ASC
+         LIMIT ${limite}
+         FOR UPDATE SKIP LOCKED
       )
-      .limit(limite);
+      UPDATE notificacion n
+         SET intentos = n.intentos + 1,
+             ultimo_intento_at = ${ahora},
+             -- El backoff se agenda ANTES de intentar: si el proceso muere en
+             -- el envío, la fila no queda elegible de inmediato.
+             proximo_intento_at = ${ahora}::timestamptz
+               + (CASE n.intentos WHEN 0 THEN 1 WHEN 1 THEN 5 WHEN 2 THEN 15 WHEN 3 THEN 60 ELSE 240 END
+                  * interval '1 minute')
+        FROM elegidas e
+       WHERE n.id = e.id
+      RETURNING n.id, n.tenant_id, n.canal, n.intentos, n.destinatario_id, n.plantilla, n.ticket_id
+    `);
+    const filas = ((claimed as unknown as { rows?: unknown[] }).rows ??
+      (claimed as unknown as unknown[])) as Array<{
+      id: string;
+      tenant_id: string;
+      canal: string;
+      intentos: number;
+      destinatario_id: string;
+      plantilla: string;
+      ticket_id: string;
+    }>;
+    const candidatas = filas.map((f) => ({
+      id: f.id,
+      tenantId: f.tenant_id,
+      canal: f.canal,
+      intentos: f.intentos,
+      destinatarioId: f.destinatario_id,
+      plantilla: f.plantilla,
+      ticketId: f.ticket_id,
+    }));
 
     let reintentadas = 0;
     let abandonadas = 0;
 
     for (const n of candidatas) {
-      const intento = (n.intentos ?? 0) + 1;
-      if (intento > maxIntentos) {
-        await systemDb
-          .update(notificacion)
-          .set({ estado: 'FALLIDA', error: 'agotados los reintentos', proximoIntentoAt: null })
-          .where(eq(notificacion.id, n.id));
-        abandonadas++;
-        continue;
-      }
-
+      // A2: el destinatario se busca DENTRO de su tenant. `destinatario_id` no
+      // tiene FK y `destinatario_tipo` admite ADMIN, así que sin este filtro un
+      // id podía resolverse a un teléfono de otra administración — sobre
+      // systemDb, que bypassa RLS.
       const dest = (
         await systemDb
           .select({ phone: residente.telefonoE164, pushToken: residente.pushToken })
           .from(residente)
-          .where(eq(residente.id, n.destinatarioId))
+          .where(and(eq(residente.tenantId, n.tenantId), eq(residente.id, n.destinatarioId)))
           .limit(1)
       )[0];
       if (!dest) {
@@ -116,24 +138,53 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      // El backoff se agenda ANTES de intentar: si el proceso muere durante el
-      // envío, la fila no queda elegible de inmediato y no se dispara una
-      // tormenta de reintentos al arrancar.
-      const esperaMin = NotificationsService.BACKOFF_MIN[intento - 1] ?? 240;
-      await systemDb
-        .update(notificacion)
-        .set({
-          intentos: intento,
-          ultimoIntentoAt: ahora,
-          proximoIntentoAt: new Date(ahora.getTime() + esperaMin * 60_000),
-        })
-        .where(eq(notificacion.id, n.id));
+      // B6: se reconstruye el mensaje desde el ESTADO REAL del ticket y su
+      // plantilla. Antes el reaper mandaba un texto genérico con 8 hex del UUID
+      // y le pasaba 'VALIDADO' hardcodeado al push: un ticket DESCARTADO le
+      // llegaba al residente titulado "Reporte validado" — información falsa
+      // sobre su reclamo.
+      const tk = (
+        await systemDb
+          .select({ estado: ticket.estado, shortCode: ticket.shortCode, id: ticket.id })
+          .from(ticket)
+          .where(and(eq(ticket.tenantId, n.tenantId), eq(ticket.id, n.ticketId)))
+          .limit(1)
+      )[0];
+      if (!tk) {
+        await systemDb
+          .update(notificacion)
+          .set({ estado: 'FALLIDA', error: 'ticket inexistente', proximoIntentoAt: null })
+          .where(eq(notificacion.id, n.id));
+        abandonadas++;
+        continue;
+      }
 
-      const texto = `Actualización de tu reporte #${String(n.ticketId).slice(0, 8)}.`;
+      const estado = tk.estado as TicketState;
+      const tpl = pickTemplate(estado);
+      const legible = tk.shortCode ?? `#${tk.id.slice(0, 8)}`;
+      const texto = tpl
+        ? tpl.body({ short: legible, nota: '' })
+        : `Actualización de tu reporte ${legible}.`;
+
       if (n.canal === 'WHATSAPP') {
         await this.sendWhatsApp(n.id, dest.phone as E164Phone, texto, n.destinatarioId);
       } else if (n.canal === 'PUSH' && dest.pushToken) {
-        await this.sendPush(n.id, dest.pushToken, String(n.ticketId).slice(0, 8), 'VALIDADO', null);
+        await this.sendPush(n.id, dest.pushToken, legible, estado, null);
+      } else {
+        await systemDb
+          .update(notificacion)
+          .set({ estado: 'FALLIDA', error: 'sin canal disponible', proximoIntentoAt: null })
+          .where(eq(notificacion.id, n.id));
+        abandonadas++;
+        continue;
+      }
+
+      // Agotó los reintentos: se marca y se saca de la cola para siempre.
+      if (n.intentos >= maxIntentos) {
+        await systemDb
+          .update(notificacion)
+          .set({ proximoIntentoAt: null })
+          .where(and(eq(notificacion.id, n.id), eq(notificacion.estado, 'FALLIDA')));
       }
       reintentadas++;
     }
@@ -261,7 +312,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       this.log.warn({ err: msg, phone }, 'wa notification send failed');
       await systemDb
         .update(notificacion)
-        .set({ estado: 'FALLIDA', error: msg.slice(0, 500), intentos: 1 })
+        // Antes acá había un `intentos: 1` literal, que RESETEABA el contador
+        // que el reaper acababa de incrementar. La fila oscilaba entre 1 y 2 sin
+        // llegar nunca al máximo: reintentos infinitos, con costo por mensaje, y
+        // la rama de abandono era código muerto.
+        .set({ estado: 'FALLIDA', error: msg.slice(0, 500) })
         .where(eq(notificacion.id, notifId));
     }
   }
@@ -300,7 +355,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       this.log.warn({ err: msg }, 'push notification send failed');
       await systemDb
         .update(notificacion)
-        .set({ estado: 'FALLIDA', error: msg.slice(0, 500), intentos: 1 })
+        .set({ estado: 'FALLIDA', error: msg.slice(0, 500) })
         .where(eq(notificacion.id, notifId));
     }
   }

@@ -8,6 +8,11 @@ async function bootstrap(): Promise<void> {
   // Capture raw body for HMAC signature verification on /webhooks/whatsapp.
   app.use(
     json({
+      // El default de express son 100 KB, así que el `max(2_000_000)` del zod
+      // en la importación masiva era inalcanzable: una planilla de 3.000
+      // unidades moría con un 413 crudo y el informe fila-por-fila que exige
+      // RF-A05 nunca se generaba.
+      limit: process.env.API_BODY_LIMIT ?? '4mb',
       verify: (req, _res, buf) => {
         (req as unknown as { rawBody?: Buffer }).rawBody = buf;
       },

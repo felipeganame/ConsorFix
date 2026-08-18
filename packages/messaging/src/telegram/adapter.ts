@@ -106,7 +106,18 @@ export class TelegramProvider implements IMessagingProvider {
     };
 
     // Compartió el contacto: es el mensaje que habilita el vínculo.
+    //
+    // Se exige que el contacto sea el PROPIO (`contact.user_id === from.id`).
+    // El botón `request_contact` garantiza que el teléfono lo verifica Telegram,
+    // pero por el MISMO campo llega cualquier contacto que el usuario adjunte
+    // de su agenda. Sin este chequeo, alguien mandaba el contacto de un vecino y
+    // enganchaba su chat al residente de esa persona: pasaba a ver sus tickets
+    // con /estado y a reportar en su nombre.
     if (m.contact?.phone_number) {
+      const propio = m.contact.user_id !== undefined && m.contact.user_id === (m.from?.id ?? chatId);
+      if (!propio) {
+        return [{ ...base, kind: 'text', text: m.text ?? '' }];
+      }
       return [
         {
           ...base,

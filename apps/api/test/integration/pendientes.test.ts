@@ -318,16 +318,30 @@ describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
       await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id))
     )[0]!;
     expect(post.intentos).toBe(1);
-    expect(post.proximoIntentoAt).not.toBeNull();
-    // El backoff se agenda al futuro: una segunda pasada no la vuelve a tomar.
-    expect(post.proximoIntentoAt!.getTime()).toBeGreaterThan(Date.now());
+    // El mock de WhatsApp responde bien, así que el reintento tiene éxito y la
+    // fila sale de la cola. Eso es el comportamiento correcto: el reaper existe
+    // para recuperar lo colgado, no para reintentar indefinidamente.
+    expect(post.estado).toBe('ENVIADA');
 
-    const r2 = await svc.reintentarPendientes(10);
-    const tomadaDeNuevo = r2.reintentadas > 0;
-    if (tomadaDeNuevo) {
-      const post2 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
-      expect(post2.intentos).toBe(1); // no fue esta la que se volvió a tomar
-    }
+    // Ahora el contador. El bug era que el catch del envío hacía `intentos: 1`
+    // LITERAL, reseteando lo que el reaper acababa de incrementar: la fila
+    // oscilaba entre 1 y 2, nunca alcanzaba el máximo y se reintentaba para
+    // siempre, con costo por mensaje. Se simula el fallo devolviéndola a FALLIDA
+    // y haciéndola elegible: el contador tiene que subir, no volver a 1.
+    await systemDb
+      .update(notificacion)
+      .set({ estado: 'FALLIDA', proximoIntentoAt: new Date(Date.now() - 1000) })
+      .where(eq(notificacion.id, n.id));
+    await svc.reintentarPendientes(10);
+    const post2 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
+    expect(post2.intentos).toBe(2);
+
+    // Y el backoff se agenda al futuro, así que una pasada inmediata no la toma.
+    await systemDb.update(notificacion).set({ estado: 'FALLIDA' }).where(eq(notificacion.id, n.id));
+    const r3 = await svc.reintentarPendientes(10);
+    const post3 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
+    expect(post3.intentos).toBe(2);
+    expect(r3.reintentadas).toBe(0);
 
     svc.onModuleDestroy();
   });

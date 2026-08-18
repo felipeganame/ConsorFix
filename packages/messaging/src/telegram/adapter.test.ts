@@ -9,7 +9,10 @@ function provider(secret = SECRET): TelegramProvider {
 }
 
 function update(message: Record<string, unknown>): unknown {
-  return { update_id: 1, message: { message_id: 7, date: 1700000000, chat: { id: 42 }, ...message } };
+  return {
+    update_id: 1,
+    message: { message_id: 7, date: 1700000000, chat: { id: 42 }, from: { id: 42 }, ...message },
+  };
 }
 
 describe('TelegramProvider — autenticidad del webhook', () => {
@@ -58,13 +61,35 @@ describe('TelegramProvider — parseo de updates', () => {
 
   it('normaliza a E.164 el teléfono compartido', () => {
     // Telegram manda el número sin '+' en muchos clientes.
-    const [m] = provider().parseWebhook(update({ contact: { phone_number: '5491100000002' } }));
+    const [m] = provider().parseWebhook(
+      update({ contact: { phone_number: '5491100000002', user_id: 42 } }),
+    );
     expect(m?.contactPhone).toBe('+5491100000002');
   });
 
   it('respeta el + cuando ya viene', () => {
-    const [m] = provider().parseWebhook(update({ contact: { phone_number: '+54 911 0000 0002' } }));
+    const [m] = provider().parseWebhook(
+      update({ contact: { phone_number: '+54 911 0000 0002', user_id: 42 } }),
+    );
     expect(m?.contactPhone).toBe('+5491100000002');
+  });
+
+  it('IGNORA un contacto que no es el del propio remitente', () => {
+    // El botón `request_contact` garantiza que el teléfono lo verifica Telegram,
+    // pero por el MISMO campo llega cualquier contacto que el usuario adjunte de
+    // su agenda. Sin este chequeo, alguien mandaba el contacto de un vecino y
+    // enganchaba su chat al residente de esa persona: pasaba a ver sus tickets
+    // con /estado y a reportar en su nombre.
+    const [m] = provider().parseWebhook(
+      update({ contact: { phone_number: '+5491100000002', user_id: 99999 } }),
+    );
+    expect(m?.contactPhone).toBeUndefined();
+  });
+
+  it('IGNORA un contacto sin user_id', () => {
+    // Los contactos de agenda que no son usuarios de Telegram no traen user_id.
+    const [m] = provider().parseWebhook(update({ contact: { phone_number: '+5491100000002' } }));
+    expect(m?.contactPhone).toBeUndefined();
   });
 
   it('toma la foto de mayor resolución', () => {

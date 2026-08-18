@@ -23,10 +23,14 @@ const TARIFAS: Record<string, Tarifa> = {
   'gpt-4o': { in: 2.5, out: 10 },
   'text-embedding-3-small': { in: 0.02, out: 0 },
   'text-embedding-3-large': { in: 0.13, out: 0 },
-  'whisper-1': { in: 0, out: 0 }, // se cobra por minuto, no por token
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
   'gemini-2.0-flash': { in: 0.1, out: 0.4 },
 };
+
+// `whisper-1` NO está en el mapa a propósito: se cobra por minuto de audio, no
+// por token. Tenerlo con {in:0,out:0} hacía que calcularCosto devolviera 0 y
+// presentara la transcripción como gratis, en vez de undefined ("no sé cuánto
+// costó"), que es la política del resto del archivo.
 
 /** Devuelve el costo en USD, o undefined si no hay tarifa para ese modelo. */
 export function calcularCosto(

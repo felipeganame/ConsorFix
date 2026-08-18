@@ -1,13 +1,5 @@
-import {
-  BadRequestException,
-  Body,
-  ConflictException,
-  Controller,
-  Get,
-  Post,
-  Req,
-} from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { Body, ConflictException, Controller, Get, Post, Req } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { Roles } from '../auth/roles.guard.js';
@@ -61,18 +53,19 @@ export class TenantsController {
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = CreateTenantBody.parse(body);
 
-    // El email de admin es único en todo el sistema (usuario_admin_email_unique),
-    // así que se chequea antes para devolver 409 en vez de un 500 de constraint.
-    const existente = await systemDb
-      .select({ id: usuarioAdmin.id })
-      .from(usuarioAdmin)
-      .where(eq(usuarioAdmin.email, dto.admin.email))
-      .limit(1);
-    if (existente[0]) throw new ConflictException('ya existe un usuario con ese email');
-
     const hash = await this.passwords.hash(dto.admin.password);
 
     const creado = await systemDb.transaction(async (tx) => {
+      // El chequeo del email va DENTRO de la transacción: afuera, dos requests
+      // concurrentes lo pasaban los dos y el segundo devolvía un 500 de
+      // constraint en vez del 409 que corresponde.
+      const existente = await tx
+        .select({ id: usuarioAdmin.id })
+        .from(usuarioAdmin)
+        .where(eq(usuarioAdmin.email, dto.admin.email))
+        .limit(1);
+      if (existente[0]) throw new ConflictException('ya existe un usuario con ese email');
+
       const t = (
         await tx.insert(tenant).values({ nombre: dto.nombre, plan: dto.plan }).returning()
       )[0]!;
@@ -111,6 +104,3 @@ export class TenantsController {
     };
   }
 }
-
-void and;
-void BadRequestException;

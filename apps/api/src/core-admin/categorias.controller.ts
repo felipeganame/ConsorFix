@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { assertMismoTenant } from '../common/assert-mismo-tenant.js';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { Roles } from '../auth/roles.guard.js';
 import { withTenant } from '../db/client.js';
-import { categoria } from '../db/schema/index.js';
+import { categoria, consorcio } from '../db/schema/index.js';
 import { tenantIdFromReq } from './tenant-ctx.js';
 
 const CreateBody = z.object({
@@ -33,16 +34,22 @@ export class CategoriasController {
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = CreateBody.parse(body);
     const tid = tenantIdFromReq(req);
-    return withTenant(tid, async (tx) =>
-      (await tx
-        .insert(categoria)
-        .values({
-          tenantId: tid,
-          consorcioId: dto.consorcio_id,
-          nombre: dto.nombre,
-          esConducta: dto.es_conducta,
-        })
-        .returning())[0],
-    );
+    return withTenant(tid, async (tx) => {
+      // El consorcio tiene que ser del tenant: RLS no valida el destino de la FK.
+      if (dto.consorcio_id) {
+        await assertMismoTenant(tx, tid, consorcio as never, dto.consorcio_id, 'consorcio');
+      }
+      return (
+        await tx
+          .insert(categoria)
+          .values({
+            tenantId: tid,
+            consorcioId: dto.consorcio_id,
+            nombre: dto.nombre,
+            esConducta: dto.es_conducta,
+          })
+          .returning()
+      )[0];
+    });
   }
 }

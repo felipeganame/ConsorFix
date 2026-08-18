@@ -73,6 +73,7 @@ export class TicketsController {
       consorcioId: dto.consorcio_id,
       unidadId: dto.unidad_id,
       reportanteId: esResidente ? req.user!.sub : null,
+      ...(esResidente ? {} : { creadoPorAdminId: req.user!.sub }),
       tipo: dto.tipo,
       urgencia: dto.urgencia,
       titulo: dto.titulo,

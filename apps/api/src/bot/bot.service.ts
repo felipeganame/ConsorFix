@@ -317,20 +317,9 @@ export class BotService {
       titulo: inputs.classifiedTitulo,
       descripcion: inputs.classifiedDescripcion,
       embedding: inputs.embedding,
-      clasificacion: {
-        sugerido: {
-          titulo: inputs.classifiedTitulo,
-          descripcion_normalizada: inputs.classifiedDescripcion,
-          categoria: inputs.classifiedCategoria,
-          origen: inputs.classifiedOrigen,
-          urgencia: inputs.classifiedUrgencia,
-          ...(inputs.classifiedUbicacion !== undefined && { ubicacion: inputs.classifiedUbicacion }),
-        },
-        confianza: inputs.classifiedConfianza,
-        modelo: inputs.classifiedModelo,
-        promptVersion: inputs.classifiedPromptVersion,
-      },
+      clasificacion: sugerenciaDeSesion(inputs),
     });
+    await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
     await this.reply(
       inbound.from,
       `Ok, registré un reporte nuevo (#${t.id.slice(0, 8)}). Categoría: ${inputs.classifiedCategoria}, urgencia: ${inputs.classifiedUrgencia}. El administrador lo va a validar.`,
@@ -411,6 +400,11 @@ export class BotService {
     // CONFIRMÁS el reporte, aparece en la bandeja"). Faltaba por completo: el
     // bot creaba el ticket directo, sin que el residente pudiera corregir nada.
     if (process.env.BOT_CONFIRMACION_DISABLED !== '1') {
+      // RF-B09: la media se sube ACÁ, no al crear el ticket. Las URLs del
+      // proveedor expiran en minutos y el ticket se crea en otro request, así
+      // que si se esperara a la confirmación los bytes ya no existirían. En la
+      // sesión viaja solo la referencia, no los megabytes.
+      const subida = await this.subirMedia(resi.tenantId, mediaPendiente);
       await upsertSession(inbound.from, {
         step: 'confirm_reporte',
         pendingTicketInputs: {
@@ -426,6 +420,8 @@ export class BotService {
           classifiedModelo: classified.modelo,
           classifiedPromptVersion: classified.prompt_version,
           ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+          ...(classified.uso ? { classifiedUso: classified.uso } : {}),
+          ...(subida ? { mediaSubida: subida } : {}),
           embedding,
         },
       });
@@ -458,7 +454,7 @@ export class BotService {
         ...(classified.uso ? { uso: classified.uso } : {}),
       },
     });
-    await this.guardarMedia(resi.tenantId, t.id, mediaPendiente);
+    await this.asociarMediaSubida(resi.tenantId, t.id, await this.subirMedia(resi.tenantId, mediaPendiente));
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
@@ -717,26 +713,38 @@ export class BotService {
     const inputs = state.pendingTicketInputs;
     if (!inputs) {
       await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(inbound.from, 'Se me perdió el reporte. ¿Me lo contás de nuevo?', inbound);
       return { status: 'confirm-session-corrupt' };
     }
 
     const si = /^(s[ií]|si|dale|ok|confirmo|correcto|1)$/.test(raw);
-    const no = /^(no|cancelar|corregir|mal|2)$/.test(raw);
+    const no = /^(no|cancelar|mal|2)$/.test(raw);
 
     if (!si && !no) {
+      // Cualquier otra cosa se interpreta como una corrección: el residente
+      // está reescribiendo el reporte. Antes se le respondía "No te entendí" y
+      // quedaba atrapado hasta tipear literalmente sí o no, con su texto
+      // descartado en cada vuelta — y una FOTO acá dejaba el webhook_event en
+      // PENDIENTE para siempre.
+      await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
+      if (inbound.kind === 'text' && raw.length > 0) {
+        await this.reply(inbound.from, 'Ok, tomo esto como la versión corregida.', inbound);
+        // Se reprocesa como reporte nuevo, ya sin sesión.
+        return this.continuar(inbound, resi);
+      }
       await this.reply(
         inbound.from,
-        'No te entendí. Respondé *Sí* para registrarlo o *No* para corregirlo.',
+        'Para registrarlo necesito que me confirmes: respondé *Sí*, o contame de nuevo qué pasa.',
         inbound,
       );
       return { status: 'confirm-invalid' };
     }
 
-    await clearSession(inbound.from);
-    await this.markWebhookProcessed(inbound.wamid);
-
     if (no) {
+      await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(
         inbound.from,
         'Listo, lo descarté. Contame de nuevo qué pasa y lo registro como me digas.',
@@ -745,6 +753,10 @@ export class BotService {
       return { status: 'report-rejected' };
     }
 
+    // El ticket se crea ANTES de limpiar la sesión y de marcar el webhook.
+    // Al revés, si el insert fallaba el reporte desaparecía: sesión borrada,
+    // webhook marcado como procesado (así que un reintento de Meta se
+    // descartaba) y el residente sin ticket ni aviso.
     const t = await this.createTicket({
       tenantId: resi.tenantId,
       consorcioId: inputs.consorcioId,
@@ -756,20 +768,12 @@ export class BotService {
       titulo: inputs.classifiedTitulo,
       descripcion: inputs.classifiedDescripcion,
       embedding: inputs.embedding,
-      clasificacion: {
-        sugerido: {
-          titulo: inputs.classifiedTitulo,
-          descripcion_normalizada: inputs.classifiedDescripcion,
-          tipo: inputs.classifiedTipo,
-          categoria: inputs.classifiedCategoria,
-          origen: inputs.classifiedOrigen,
-          urgencia: inputs.classifiedUrgencia,
-        },
-        confianza: inputs.classifiedConfianza,
-        modelo: inputs.classifiedModelo,
-        promptVersion: inputs.classifiedPromptVersion,
-      },
+      clasificacion: sugerenciaDeSesion(inputs),
     });
+
+    await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
+    await clearSession(inbound.from);
+    await this.markWebhookProcessed(inbound.wamid);
 
     await this.reply(
       inbound.from,
@@ -795,18 +799,21 @@ export class BotService {
   }
 
   /**
-   * Persiste un adjunto y lo asocia al ticket (RF-B09).
+   * Sube el adjunto al storage y devuelve su referencia (RF-B09).
    *
-   * Silencioso a propósito: si el storage no está configurado o falla, el
-   * ticket ya existe y el residente ya fue atendido. Perder la foto es malo;
-   * hacerle perder el reporte por eso sería peor.
+   * Se llama en cuanto llegan los bytes, ANTES de pedir la confirmación: las
+   * URLs del proveedor expiran en minutos y el ticket puede crearse en otro
+   * request. Si el storage no está disponible devuelve null y el flujo sigue —
+   * perder la foto es malo, hacerle perder el reporte al residente es peor.
    */
-  private async guardarMedia(
+  private async subirMedia(
     tenantId: string,
-    ticketId: string,
     pendiente: MediaPendiente | null,
-  ): Promise<void> {
-    if (!pendiente) return;
+  ): Promise<
+    | { tipo: 'FOTO' | 'AUDIO'; storageUrl: string; proveedorId: string; mimeType: string; sizeBytes: number }
+    | undefined
+  > {
+    if (!pendiente) return undefined;
     try {
       const subido = await this.storage.subir(
         tenantId,
@@ -814,18 +821,41 @@ export class BotService {
         pendiente.bytes,
         pendiente.contentType,
       );
-      if (!subido) return;
+      if (!subido) return undefined;
+      return {
+        tipo: pendiente.tipo,
+        storageUrl: subido.url,
+        proveedorId: pendiente.proveedorId,
+        mimeType: pendiente.contentType,
+        sizeBytes: subido.sizeBytes,
+      };
+    } catch (err) {
+      this.log.error({ err: (err as Error).message }, 'no se pudo subir la media');
+      return undefined;
+    }
+  }
+
+  /** Asocia al ticket una media ya subida (RF-B09). */
+  private async asociarMediaSubida(
+    tenantId: string,
+    ticketId: string,
+    subida:
+      | { tipo: 'FOTO' | 'AUDIO'; storageUrl: string; proveedorId: string; mimeType: string; sizeBytes: number }
+      | undefined,
+  ): Promise<void> {
+    if (!subida) return;
+    try {
       await systemDb.insert(media).values({
         tenantId,
         ticketId,
-        tipo: pendiente.tipo,
-        storageUrl: subido.url,
-        waMediaId: pendiente.proveedorId,
-        sizeBytes: subido.sizeBytes,
-        mimeType: pendiente.contentType,
+        tipo: subida.tipo,
+        storageUrl: subida.storageUrl,
+        waMediaId: subida.proveedorId,
+        sizeBytes: subida.sizeBytes,
+        mimeType: subida.mimeType,
       });
     } catch (err) {
-      this.log.error({ err: (err as Error).message, ticketId }, 'no se pudo guardar la media');
+      this.log.error({ err: (err as Error).message, ticketId }, 'no se pudo asociar la media');
     }
   }
 
@@ -917,6 +947,32 @@ export class BotService {
     }
     return { kind: 'pending-link', status: 'telegram-awaiting-contact' };
   }
+}
+
+/**
+ * Arma la sugerencia a persistir desde los datos de la sesión.
+ *
+ * Existe para que los DOS caminos que crean tickets desde una sesión —la
+ * confirmación del reporte y la del dedup— guarden la MISMA forma. Antes uno
+ * incluía `tipo` y omitía `ubicacion` y el otro al revés, así que el dataset de
+ * G16 quedaba con registros heterogéneos según por dónde entró el reporte.
+ */
+function sugerenciaDeSesion(inputs: NonNullable<SessionState['pendingTicketInputs']>) {
+  return {
+    sugerido: {
+      titulo: inputs.classifiedTitulo,
+      descripcion_normalizada: inputs.classifiedDescripcion,
+      tipo: inputs.classifiedTipo,
+      categoria: inputs.classifiedCategoria,
+      origen: inputs.classifiedOrigen,
+      urgencia: inputs.classifiedUrgencia,
+      ...(inputs.classifiedUbicacion !== undefined && { ubicacion: inputs.classifiedUbicacion }),
+    },
+    confianza: inputs.classifiedConfianza,
+    modelo: inputs.classifiedModelo,
+    promptVersion: inputs.classifiedPromptVersion,
+    ...(inputs.classifiedUso ? { uso: inputs.classifiedUso } : {}),
+  };
 }
 
 /**
