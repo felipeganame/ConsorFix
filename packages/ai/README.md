@@ -16,8 +16,7 @@ Whisper, todo por env y sin tocar código.
 
 ## Variables de entorno
 
-No pude leer `.env.example` (hay una regla de permisos que lo bloquea), así que
-esta es la lista derivada de leer el código. **Verificar que estén todas ahí.**
+Todas están declaradas en `.env.example` (verificado el 2026-08-17).
 
 | Variable | Para qué | Default |
 |---|---|---|
