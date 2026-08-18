@@ -18,6 +18,7 @@ import { systemDb } from '../db/client.js';
 import {
   clasificacionIa,
   consorcio,
+  media,
   residente,
   ticket,
   ticketEvento,
@@ -26,6 +27,7 @@ import {
   voto,
   webhookEvent,
 } from '../db/schema/index.js';
+import { StorageService } from '../storage/storage.service.js';
 import { findDedupCandidate } from './dedup.js';
 import {
   clearSession,
@@ -50,6 +52,14 @@ import {
  * Implements RF-B01..B03, B05 (mock), B06, B07. Audio (B04) llega con
  * la integración real de Whisper.
  */
+/** Bytes de un adjunto que todavía no tiene ticket al que asociarse (RF-B09). */
+interface MediaPendiente {
+  tipo: 'FOTO' | 'AUDIO';
+  contentType: string;
+  bytes: ArrayBuffer;
+  proveedorId: string;
+}
+
 @Injectable()
 export class BotService {
   private readonly log = new Logger(BotService.name);
@@ -58,6 +68,8 @@ export class BotService {
   private readonly transcriber = createTranscriber();
   private readonly vision = createVision();
   private readonly messaging = createWhatsAppProvider();
+
+  constructor(private readonly storage: StorageService) {}
 
   /**
    * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
@@ -148,6 +160,8 @@ export class BotService {
 
     // Para audio: descargar media + transcribir (RF-B04). Si falla, pedir texto.
     let text = (inbound.text ?? '').trim();
+    // La media viaja hasta que exista el ticket al que asociarla (RF-B09).
+    let mediaPendiente: MediaPendiente | null = null;
     if (inbound.kind === 'audio') {
       if (!inbound.mediaId) {
         await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.');
@@ -155,6 +169,15 @@ export class BotService {
       }
       try {
         const dl = await this.messaging.downloadMedia(inbound.mediaId);
+        // RF-B09: se guarda ANTES de transcribir. Las URLs del proveedor
+        // expiran en minutos, así que este es el único momento en que existen
+        // los bytes. Si el storage falla, el reporte sigue.
+        mediaPendiente = {
+          tipo: 'AUDIO',
+          contentType: dl.contentType,
+          bytes: dl.bytes,
+          proveedorId: inbound.mediaId,
+        };
         const tr = await this.transcriber.transcribe(dl.bytes, { language: 'es' });
         text = (tr.text ?? '').trim();
         if (text.length === 0) {
@@ -173,6 +196,12 @@ export class BotService {
       }
       try {
         const dl = await this.messaging.downloadMedia(inbound.mediaId);
+        mediaPendiente = {
+          tipo: 'FOTO',
+          contentType: dl.contentType,
+          bytes: dl.bytes,
+          proveedorId: inbound.mediaId,
+        };
         const v = await this.vision.describe(dl.bytes, {
           contentType: dl.contentType,
           promptVersion: VISION_PROMPT_VERSION,
@@ -211,7 +240,7 @@ export class BotService {
     }
 
     const choice = consorcios[0]!;
-    return this.classifyDedupCreate(inbound, resi, choice.consorcioId, choice.unidadId, text);
+    return this.classifyDedupCreate(inbound, resi, choice.consorcioId, choice.unidadId, text, mediaPendiente);
   }
 
   private async handleConsorcioChoice(
@@ -308,6 +337,7 @@ export class BotService {
     consorcioId: string,
     unidadId: string | null,
     text: string,
+    mediaPendiente: MediaPendiente | null = null,
   ): Promise<{ status: string; ticketId: string }> {
     let classified;
     try {
@@ -391,6 +421,7 @@ export class BotService {
         promptVersion: classified.prompt_version,
       },
     });
+    await this.guardarMedia(resi.tenantId, t.id, mediaPendiente);
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
@@ -616,6 +647,41 @@ export class BotService {
       inbound,
     );
     return { status: 'comando-estado' };
+  }
+
+  /**
+   * Persiste un adjunto y lo asocia al ticket (RF-B09).
+   *
+   * Silencioso a propósito: si el storage no está configurado o falla, el
+   * ticket ya existe y el residente ya fue atendido. Perder la foto es malo;
+   * hacerle perder el reporte por eso sería peor.
+   */
+  private async guardarMedia(
+    tenantId: string,
+    ticketId: string,
+    pendiente: MediaPendiente | null,
+  ): Promise<void> {
+    if (!pendiente) return;
+    try {
+      const subido = await this.storage.subir(
+        tenantId,
+        pendiente.tipo === 'FOTO' ? 'foto' : 'audio',
+        pendiente.bytes,
+        pendiente.contentType,
+      );
+      if (!subido) return;
+      await systemDb.insert(media).values({
+        tenantId,
+        ticketId,
+        tipo: pendiente.tipo,
+        storageUrl: subido.url,
+        waMediaId: pendiente.proveedorId,
+        sizeBytes: subido.sizeBytes,
+        mimeType: pendiente.contentType,
+      });
+    } catch (err) {
+      this.log.error({ err: (err as Error).message, ticketId }, 'no se pudo guardar la media');
+    }
   }
 
   /**

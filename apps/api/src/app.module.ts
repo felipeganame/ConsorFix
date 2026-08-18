@@ -9,6 +9,8 @@ import { RolesGuard } from './auth/roles.guard.js';
 import { BotModule } from './bot/bot.module.js';
 import { DomainErrorFilter } from './common/domain-error.filter.js';
 import { ConductaModule } from './conducta/conducta.module.js';
+import { StorageModule } from './storage/storage.module.js';
+import { ImportModule } from './import/import.module.js';
 import { CoreAdminModule } from './core-admin/core-admin.module.js';
 import { GastosModule } from './gastos/gastos.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -30,6 +32,8 @@ import { WebhooksModule } from './webhooks/webhooks.module.js';
     QueueModule,
     TicketsModule,
     CoreAdminModule,
+    ImportModule,
+    StorageModule,
     ConductaModule,
     GastosModule,
     MeModule,

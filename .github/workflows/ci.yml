@@ -28,6 +28,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Turbo 2 usa envMode strict: una variable que no esté en globalEnv llega
+      # como undefined sin dar error, y el síntoma aparece lejos de la causa.
+      - run: node scripts/check-turbo-env.cjs
       - run: pnpm lint
       - run: pnpm typecheck
 
