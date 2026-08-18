@@ -3,19 +3,31 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { login, setToken } from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 
-const DEMO = [
-  { email: 'admin@consorciofix.dev', pwd: 'admin123', label: 'Administradora' },
-  { email: 'super@consorciofix.dev', pwd: 'super123', label: 'Super admin' },
-  { email: 'propi@consorciofix.dev', pwd: 'resi123', label: 'Propietaria 4A' },
-  { email: 'inqui@consorciofix.dev', pwd: 'resi123', label: 'Inquilina 4A' },
-];
+/**
+ * Atajos para las cuentas del seed. Sirven muchísimo para desarrollar y para la
+ * demo de la defensa, pero son credenciales reales del entorno de desarrollo:
+ * si el panel se publica, quedan en texto plano dentro del bundle de JS que
+ * cualquiera puede leer, apuntando a usuarios que el seed crea de verdad.
+ *
+ * `import.meta.env.DEV` es false en el build de producción, así que Vite elimina
+ * la lista entera del bundle en vez de solo esconder los botones.
+ */
+const DEMO = import.meta.env.DEV
+  ? [
+      { email: 'admin@consorciofix.dev', pwd: 'admin123', label: 'Administradora' },
+      { email: 'super@consorciofix.dev', pwd: 'super123', label: 'Super admin' },
+      { email: 'propi@consorciofix.dev', pwd: 'resi123', label: 'Propietaria 4A' },
+      { email: 'inqui@consorciofix.dev', pwd: 'resi123', label: 'Inquilina 4A' },
+    ]
+  : [];
 
 export function LoginPage(): JSX.Element {
   const { setSession } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const [email, setEmail] = useState('admin@consorciofix.dev');
-  const [password, setPassword] = useState('admin123');
+  // Precargado solo en desarrollo: en producción el formulario arranca vacío.
+  const [email, setEmail] = useState(DEMO[0]?.email ?? '');
+  const [password, setPassword] = useState(DEMO[0]?.pwd ?? '');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -71,6 +83,7 @@ export function LoginPage(): JSX.Element {
         <button type="submit" className="btn primary" disabled={loading} style={{ width: '100%' }}>
           {loading ? 'Entrando…' : 'Entrar'}
         </button>
+        {DEMO.length > 0 && (
         <div className="mt-2" style={{ borderTop: '1px solid var(--cf-line)', paddingTop: 12 }}>
           <div className="uppercase" style={{ marginBottom: 6 }}>Cuentas demo</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -91,6 +104,7 @@ export function LoginPage(): JSX.Element {
             ))}
           </div>
         </div>
+        )}
       </form>
     </div>
   );

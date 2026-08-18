@@ -38,6 +38,10 @@ export function AuditPage(): JSX.Element {
   const [days, setDays] = useState<number>(30);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // La API topea en 500. Se pide un tramo y se avisa cuando lo que se muestra
+  // está recortado: antes traía las 100 por defecto sin decirlo, y una bitácora
+  // que corta en silencio se lee como "no pasó nada más".
+  const [limit, setLimit] = useState(100);
 
   useEffect(() => {
     setLoading(true);
@@ -45,11 +49,14 @@ export function AuditPage(): JSX.Element {
     listAudit({
       ...(entidadFilter && { entidad: entidadFilter }),
       days,
+      limit,
     })
       .then(setEntries)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [entidadFilter, days]);
+  }, [entidadFilter, days, limit]);
+
+  const recortado = entries.length >= limit;
 
   return (
     <>
@@ -96,7 +103,15 @@ export function AuditPage(): JSX.Element {
             </div>
           </div>
           <div className="spacer" />
-          <span style={{ fontSize: 12, color: 'var(--cf-ink-3)' }}>{entries.length} eventos</span>
+          <span style={{ fontSize: 12, color: 'var(--cf-ink-3)' }}>
+            {entries.length} eventos
+            {recortado && ' (recortado)'}
+          </span>
+          {recortado && limit < 500 && (
+            <button type="button" className="btn ghost sm" onClick={() => setLimit(500)} disabled={loading}>
+              Ver más
+            </button>
+          )}
         </div>
 
         <section>

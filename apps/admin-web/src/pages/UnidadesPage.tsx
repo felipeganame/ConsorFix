@@ -4,6 +4,7 @@ import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
   createUnidad,
+  createUnidadesBulk,
   createVinculo,
   desvincular,
   listConsorcios,
@@ -22,6 +23,10 @@ export function UnidadesPage(): JSX.Element {
   const [consorcioId, setConsorcioId] = useState<string>('');
   const [unidades, setUnidades] = useState<Unidad[]>([]);
   const [etiqueta, setEtiqueta] = useState('');
+  // Alta masiva: es como se carga un edificio de verdad, de a 80 unidades.
+  const [modoLote, setModoLote] = useState(false);
+  const [lote, setLote] = useState('');
+  const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -56,8 +61,27 @@ export function UnidadesPage(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      await createUnidad({ consorcio_id: consorcioId, etiqueta });
-      setEtiqueta('');
+      if (modoLote) {
+        // `POST /unidades/bulk` existía y ninguna pantalla lo usaba: cargar un
+        // edificio de 80 unidades se hacía de a una. Hace onConflictDoNothing,
+        // así que repetir una etiqueta ya cargada no rompe nada.
+        const etiquetas = lote
+          .split(/[\n,;]+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (etiquetas.length === 0) throw new Error('No hay etiquetas para crear.');
+        const creadas = await createUnidadesBulk({ consorcio_id: consorcioId, etiquetas });
+        const repetidas = etiquetas.length - creadas.length;
+        setInfo(
+          `Se crearon ${creadas.length} de ${etiquetas.length}.` +
+            (repetidas > 0 ? ` ${repetidas} ya existían y se dejaron como estaban.` : ''),
+        );
+        setLote('');
+      } else {
+        await createUnidad({ consorcio_id: consorcioId, etiqueta });
+        setEtiqueta('');
+        setInfo(null);
+      }
       setShowForm(false);
       load();
     } catch (err) {
@@ -91,14 +115,37 @@ export function UnidadesPage(): JSX.Element {
 
           {showForm && (
             <form className="card form-grid" onSubmit={onCreate}>
-              <label>
-                <span>Etiqueta</span>
-                <input value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} required maxLength={40} placeholder="Ej. 4A o Lote 12" />
-              </label>
-              <button type="submit" className="btn primary" disabled={busy || !consorcioId || !etiqueta}>Crear unidad</button>
+              <div className="segment">
+                <button type="button" className={!modoLote ? 'on' : ''} onClick={() => setModoLote(false)}>Una unidad</button>
+                <button type="button" className={modoLote ? 'on' : ''} onClick={() => setModoLote(true)}>Varias de una vez</button>
+              </div>
+              {modoLote ? (
+                <label>
+                  <span>Etiquetas (una por línea, o separadas por coma)</span>
+                  <textarea
+                    rows={6}
+                    value={lote}
+                    onChange={(e) => setLote(e.target.value)}
+                    placeholder={'1A\n1B\n2A\n2B'}
+                  />
+                </label>
+              ) : (
+                <label>
+                  <span>Etiqueta</span>
+                  <input value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} maxLength={40} placeholder="Ej. 4A o Lote 12" />
+                </label>
+              )}
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={busy || !consorcioId || (modoLote ? !lote.trim() : !etiqueta)}
+              >
+                {modoLote ? 'Crear las unidades' : 'Crear unidad'}
+              </button>
             </form>
           )}
 
+          {info && <div className="chip ok">{info}</div>}
           {error && <div className="error">{error}</div>}
 
           <table className="grid">

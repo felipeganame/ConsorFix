@@ -182,6 +182,29 @@ export function createConsorcio(body: {
   return apiFetch<Consorcio>('/consorcios', { method: 'POST', body: JSON.stringify(body) });
 }
 
+/**
+ * Editar o archivar un consorcio. Archivar es un soft-delete: la fila se
+ * conserva porque los tickets viejos y su historial la referencian.
+ *
+ * El endpoint existía y ninguna pantalla lo llamaba: la lista mostraba el estado
+ * "Archivado" sin ninguna forma de llegar a ese estado, y un consorcio cargado
+ * con el nombre mal escrito no se podía corregir.
+ */
+export function updateConsorcio(
+  id: string,
+  body: { nombre?: string; direccion?: string; archivado?: boolean },
+): Promise<Consorcio> {
+  return apiFetch<Consorcio>(`/consorcios/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+/** Alta de muchas unidades de una vez: así se carga un edificio de verdad. */
+export function createUnidadesBulk(body: {
+  consorcio_id: string;
+  etiquetas: string[];
+}): Promise<Unidad[]> {
+  return apiFetch<Unidad[]>('/unidades/bulk', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export function listUnidades(consorcioId?: string): Promise<Unidad[]> {
   const q = consorcioId ? `?consorcio_id=${encodeURIComponent(consorcioId)}` : '';
   return apiFetch<Unidad[]>(`/unidades${q}`);
@@ -380,11 +403,17 @@ export interface AuditEntry {
   at: string;
 }
 
-export function listAudit(q: { entidad?: string; accion?: string; days?: number } = {}): Promise<AuditEntry[]> {
+export function listAudit(
+  q: { entidad?: string; accion?: string; days?: number; limit?: number } = {},
+): Promise<AuditEntry[]> {
   const params = new URLSearchParams();
   if (q.entidad) params.set('entidad', q.entidad);
   if (q.accion) params.set('accion', q.accion);
   if (q.days) params.set('days', String(q.days));
+  // La API topea en 100 por defecto (máximo 500). El límite viaja explícito para
+  // que la pantalla sepa si lo que muestra está recortado y pueda decirlo: una
+  // bitácora que corta en silencio se lee como "no pasó nada más".
+  if (q.limit) params.set('limit', String(q.limit));
   const qs = params.toString();
   return apiFetch<AuditEntry[]>(`/admin/audit-log${qs ? `?${qs}` : ''}`);
 }
