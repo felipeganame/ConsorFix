@@ -151,6 +151,9 @@ importers:
       '@types/supertest':
         specifier: ^6.0.2
         version: 6.0.3
+      '@vitest/coverage-v8':
+        specifier: ^2.1.9
+        version: 2.1.9(vitest@2.1.9(@types/node@20.19.43)(terser@5.48.0))
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
