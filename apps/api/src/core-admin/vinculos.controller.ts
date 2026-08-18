@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { assertMismoTenant } from '../common/assert-mismo-tenant.js';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { Roles } from '../auth/roles.guard.js';
 import { withTenant } from '../db/client.js';
-import { vinculoResidente } from '../db/schema/index.js';
+import { residente, unidad, vinculoResidente } from '../db/schema/index.js';
 import { tenantIdFromReq } from './tenant-ctx.js';
 
 const CreateBody = z.object({
@@ -37,11 +38,17 @@ export class VinculosController {
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = CreateBody.parse(body);
     const tid = tenantIdFromReq(req);
-    return withTenant(tid, async (tx) =>
-      (await tx
-        .insert(vinculoResidente)
-        .values({ tenantId: tid, residenteId: dto.residente_id, unidadId: dto.unidad_id, rol: dto.rol })
-        .returning())[0],
-    );
+    return withTenant(tid, async (tx) => {
+      // Los DOS extremos tienen que ser del tenant. Sin esto se podía vincular
+      // un residente ajeno a una unidad ajena, y el listado exponía los ids.
+      await assertMismoTenant(tx, tid, residente as never, dto.residente_id, 'residente');
+      await assertMismoTenant(tx, tid, unidad as never, dto.unidad_id, 'unidad');
+      return (
+        await tx
+          .insert(vinculoResidente)
+          .values({ tenantId: tid, residenteId: dto.residente_id, unidadId: dto.unidad_id, rol: dto.rol })
+          .returning()
+      )[0];
+    });
   }
 }

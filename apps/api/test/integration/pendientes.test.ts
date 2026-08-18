@@ -434,3 +434,89 @@ describe('regla 1 — la FK del consorcio no puede cruzar tenants', () => {
     expect(enAjeno).toHaveLength(0);
   });
 });
+
+describe('regla 1 — ninguna FK del ABM puede cruzar tenants', () => {
+  // Estos tres eran bugs PREEXISTENTES, encontrados atacando el ABM después de
+  // dar con el de POST /tickets. El patrón es siempre el mismo: RLS filtra las
+  // filas por tenant_id, pero no valida que la FK apunte dentro del tenant, así
+  // que la constraint se conforma con que el id exista en cualquier lado.
+  let ajenoId: string;
+  let consAjeno: { id: string };
+  let resiAjeno: { id: string };
+  let uniPropia: { id: string };
+
+  beforeAll(async () => {
+    const ajeno = (
+      await systemDb.insert(tenantTable).values({ nombre: `${PREFIX}fk-ajeno`, plan: 'basico' }).returning()
+    )[0]!;
+    ajenoId = ajeno.id;
+    consAjeno = (
+      await systemDb
+        .insert(consorcio)
+        .values({ tenantId: ajenoId, nombre: `${PREFIX}fk-cons`, tipo: 'EDIFICIO' })
+        .returning()
+    )[0]!;
+    resiAjeno = (
+      await systemDb
+        .insert(residente)
+        .values({
+          tenantId: ajenoId,
+          nombre: `${PREFIX}fk-resi`,
+          telefonoE164: `+549${String(Date.now() + 31).slice(-9)}`,
+        })
+        .returning()
+    )[0]!;
+    uniPropia = (
+      await systemDb
+        .select({ id: unidad.id })
+        .from(unidad)
+        .where(and(eq(unidad.tenantId, ten.id), eq(unidad.consorcioId, cons.id)))
+        .limit(1)
+    )[0]! as { id: string };
+  }, 30_000);
+
+  it('no se puede crear una unidad en el consorcio de otro tenant', async () => {
+    const res = await fetch(`${base}/unidades`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({ consorcio_id: consAjeno.id, etiqueta: 'INTRUSA' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('tampoco en lote', async () => {
+    const res = await fetch(`${base}/unidades/bulk`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({ consorcio_id: consAjeno.id, etiquetas: ['INTRUSA-1', 'INTRUSA-2'] }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('no se puede vincular un residente de otro tenant', async () => {
+    // Este era el peor de los tres: el vínculo quedaba en el tenant propio
+    // apuntando a un residente ajeno, y GET /vinculos exponía su id.
+    const res = await fetch(`${base}/vinculos`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({ residente_id: resiAjeno.id, unidad_id: uniPropia.id, rol: 'INQUILINO' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('el invariante se sostiene en toda la base', async () => {
+    const cruces = await systemDb.execute(sql`
+      SELECT count(*)::int AS n FROM (
+        SELECT 1 FROM unidad u JOIN consorcio c ON c.id = u.consorcio_id WHERE u.tenant_id <> c.tenant_id
+        UNION ALL
+        SELECT 1 FROM vinculo_residente v JOIN unidad u ON u.id = v.unidad_id WHERE v.tenant_id <> u.tenant_id
+        UNION ALL
+        SELECT 1 FROM vinculo_residente v JOIN residente r ON r.id = v.residente_id WHERE v.tenant_id <> r.tenant_id
+        UNION ALL
+        SELECT 1 FROM ticket t JOIN consorcio c ON c.id = t.consorcio_id WHERE t.tenant_id <> c.tenant_id
+      ) x
+    `);
+    const filas = (cruces as unknown as { rows?: Array<{ n: number }> }).rows ?? (cruces as unknown as Array<{ n: number }>);
+    expect(Number(filas[0]!.n)).toBe(0);
+  });
+});
