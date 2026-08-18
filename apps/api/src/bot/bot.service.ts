@@ -155,6 +155,9 @@ export class BotService {
     if (session?.state.step === 'confirm_dedup') {
       return this.handleDedupConfirm(inbound, resi, session.state);
     }
+    if (session?.state.step === 'confirm_reporte') {
+      return this.handleReporteConfirm(inbound, resi, session.state);
+    }
 
     const consorcios = await this.consorciosDelResidente(resi.id, resi.tenantId);
     if (consorcios.length === 0) {
@@ -400,6 +403,35 @@ export class BotService {
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'dedup query failed; creating anyway');
       }
+    }
+
+    // RF-B06: antes de crear, mostrar el resumen y pedir confirmación. Está
+    // especificado en docs/02 (RF-B06), docs/03 (P1, nodos N y O) y en la tarea
+    // 2.3 del plan, y es el criterio de salida de la Fase 2 ("escribís al bot,
+    // CONFIRMÁS el reporte, aparece en la bandeja"). Faltaba por completo: el
+    // bot creaba el ticket directo, sin que el residente pudiera corregir nada.
+    if (process.env.BOT_CONFIRMACION_DISABLED !== '1') {
+      await upsertSession(inbound.from, {
+        step: 'confirm_reporte',
+        pendingTicketInputs: {
+          consorcioId,
+          unidadId,
+          classifiedTitulo: classified.titulo,
+          classifiedDescripcion: classified.descripcion_normalizada,
+          classifiedCategoria: classified.categoria,
+          classifiedOrigen: classified.origen,
+          classifiedUrgencia: classified.urgencia,
+          classifiedTipo: classified.tipo,
+          classifiedConfianza: classified.confianza,
+          classifiedModelo: classified.modelo,
+          classifiedPromptVersion: classified.prompt_version,
+          ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+          embedding,
+        },
+      });
+      await this.markWebhookProcessed(inbound.wamid);
+      await this.reply(inbound.from, resumenDeReporte(classified), inbound);
+      return { status: 'awaiting-report-confirm', ticketId: '' };
     }
 
     const t = await this.createTicket({
@@ -669,6 +701,86 @@ export class BotService {
     return { status: 'comando-estado' };
   }
 
+  /**
+   * RF-B06: el residente confirma, corrige o cancela el resumen.
+   *
+   * "Corregir" acá significa mandar el reporte de nuevo: dejar que edite campo
+   * por campo por WhatsApp sería un formulario conversacional entero, y el
+   * criterio del RF se cumple con poder rechazar el resumen y reescribirlo.
+   */
+  private async handleReporteConfirm(
+    inbound: InboundMessage,
+    resi: { id: string; tenantId: string },
+    state: SessionState,
+  ): Promise<{ status: string; ticketId?: string }> {
+    const raw = (inbound.text ?? '').trim().toLowerCase();
+    const inputs = state.pendingTicketInputs;
+    if (!inputs) {
+      await clearSession(inbound.from);
+      await this.reply(inbound.from, 'Se me perdió el reporte. ¿Me lo contás de nuevo?', inbound);
+      return { status: 'confirm-session-corrupt' };
+    }
+
+    const si = /^(s[ií]|si|dale|ok|confirmo|correcto|1)$/.test(raw);
+    const no = /^(no|cancelar|corregir|mal|2)$/.test(raw);
+
+    if (!si && !no) {
+      await this.reply(
+        inbound.from,
+        'No te entendí. Respondé *Sí* para registrarlo o *No* para corregirlo.',
+        inbound,
+      );
+      return { status: 'confirm-invalid' };
+    }
+
+    await clearSession(inbound.from);
+    await this.markWebhookProcessed(inbound.wamid);
+
+    if (no) {
+      await this.reply(
+        inbound.from,
+        'Listo, lo descarté. Contame de nuevo qué pasa y lo registro como me digas.',
+        inbound,
+      );
+      return { status: 'report-rejected' };
+    }
+
+    const t = await this.createTicket({
+      tenantId: resi.tenantId,
+      consorcioId: inputs.consorcioId,
+      unidadId: inputs.unidadId,
+      reportanteId: resi.id,
+      tipo: inputs.classifiedTipo ?? 'INFRAESTRUCTURA',
+      urgencia: inputs.classifiedUrgencia,
+      origenSugerido: inputs.classifiedOrigen,
+      titulo: inputs.classifiedTitulo,
+      descripcion: inputs.classifiedDescripcion,
+      embedding: inputs.embedding,
+      clasificacion: {
+        sugerido: {
+          titulo: inputs.classifiedTitulo,
+          descripcion_normalizada: inputs.classifiedDescripcion,
+          tipo: inputs.classifiedTipo,
+          categoria: inputs.classifiedCategoria,
+          origen: inputs.classifiedOrigen,
+          urgencia: inputs.classifiedUrgencia,
+        },
+        confianza: inputs.classifiedConfianza,
+        modelo: inputs.classifiedModelo,
+        promptVersion: inputs.classifiedPromptVersion,
+      },
+    });
+
+    await this.reply(
+      inbound.from,
+      inputs.classifiedTipo === 'CONDUCTA'
+        ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó.`
+        : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). El administrador lo va a validar.`,
+      inbound,
+    );
+    return { status: 'created-confirmed', ticketId: t.id };
+  }
+
   /** Marca el último inbound del residente; define la ventana de 24 h (RF-G02). */
   private async registrarInbound(residenteId: string): Promise<void> {
     try {
@@ -805,6 +917,39 @@ export class BotService {
     }
     return { kind: 'pending-link', status: 'telegram-awaiting-contact' };
   }
+}
+
+/**
+ * Resumen estructurado que el residente confirma (RF-B06 / P1 nodo N).
+ * Se muestran los campos que la IA decidió, en lenguaje llano: si se equivocó,
+ * la persona lo ve antes de que el ticket exista.
+ */
+function resumenDeReporte(c: {
+  titulo: string;
+  categoria: string;
+  urgencia: string;
+  origen: string;
+  tipo: string;
+}): string {
+  const urgencia: Record<string, string> = {
+    CRITICA: 'crítica (riesgo para personas)',
+    ALTA: 'alta (servicio esencial afectado)',
+    MEDIA: 'media',
+    BAJA: 'baja',
+  };
+  const donde = c.origen === 'ESPACIO_COMUN' ? 'espacio común' : 'unidad';
+  const que = c.tipo === 'CONDUCTA' ? 'Convivencia' : 'Infraestructura';
+  return [
+    'Antes de registrarlo, ¿está bien así?',
+    '',
+    `📝 ${c.titulo}`,
+    `• Tipo: ${que}`,
+    `• Categoría: ${c.categoria}`,
+    `• Dónde: ${donde}`,
+    `• Urgencia: ${urgencia[c.urgencia] ?? c.urgencia}`,
+    '',
+    'Respondé *Sí* para registrarlo o *No* para contármelo de nuevo.',
+  ].join('\n');
 }
 
 void sql;

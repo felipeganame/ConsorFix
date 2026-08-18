@@ -7,7 +7,7 @@ import { sesionBot } from '../db/schema/index.js';
  * `estado_flujo` is a free-form jsonb blob shaped by the bot flow steps.
  */
 export interface SessionState {
-  step?: 'pick_consorcio' | 'confirm_dedup';
+  step?: 'pick_consorcio' | 'confirm_dedup' | 'confirm_reporte';
   pendingText?: string;
   options?: Array<{ consorcioId: string; unidadId: string; nombre: string }>;
   // For 'confirm_dedup' step:
