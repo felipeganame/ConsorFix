@@ -1,6 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env.*local", "tsconfig.base.json"],
+  "globalDependencies": [
+    "**/.env.*local",
+    "tsconfig.base.json"
+  ],
   "globalEnv": [
     "NODE_ENV",
     "DATABASE_URL",
@@ -39,33 +42,55 @@
     "GOOGLE_API_KEY",
     "GOOGLE_BASE_URL",
     "VOYAGE_API_KEY",
-    "EXPO_ACCESS_TOKEN"
+    "EXPO_ACCESS_TOKEN",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_WEBHOOK_SECRET",
+    "MESSAGING_PROVIDER",
+    "AI_MAX_RETRIES"
   ],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test": {
-      "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "coverage/**"
+      ]
     },
     "test:integration": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "cache": false
     },
     "test:isolation": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "cache": false
     },
     "db:migrate": {
@@ -76,7 +101,9 @@
     },
     "ai:eval": {
       "cache": false,
-      "outputs": ["eval-results/**"]
+      "outputs": [
+        "eval-results/**"
+      ]
     },
     "clean": {
       "cache": false
