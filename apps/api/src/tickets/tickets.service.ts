@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { assertTransition, canResidenteSeeTicket, type TicketState } from '@consorciofix/domain';
-import { clasificacionIa, ticket, ticketEvento, unidad } from '../db/schema/index.js';
+import { clasificacionIa, consorcio, ticket, ticketEvento, unidad } from '../db/schema/index.js';
 import type { TxClient } from '../db/client.js';
 import { db, withTenant } from '../db/client.js';
 import { loadResidenteCtx } from '../common/residente-ctx.js';
@@ -43,6 +43,21 @@ export class TicketsService {
           .limit(1);
         if (existing[0]) return existing[0];
       }
+
+      // El consorcio DEBE pertenecer al tenant. RLS no alcanza acá: filtra las
+      // filas por `tenant_id`, pero no valida que la FK apunte dentro del mismo
+      // tenant. Sin este chequeo, un admin podía crear un ticket en SU tenant
+      // apuntando al consorcio de OTRO — no filtra datos, pero deja la base
+      // incoherente y cualquier join posterior expone el nombre del consorcio
+      // ajeno. Verificado explotable antes de este chequeo.
+      const consorcioPropio = (
+        await tx
+          .select({ id: consorcio.id })
+          .from(consorcio)
+          .where(and(eq(consorcio.tenantId, tenantId), eq(consorcio.id, input.consorcioId)))
+          .limit(1)
+      )[0];
+      if (!consorcioPropio) throw new NotFoundException('consorcio not found');
 
       // Pertenencia (RF-H03): el reportante solo puede crear tickets en un
       // consorcio donde tenga vínculo activo, y la unidad imputada debe

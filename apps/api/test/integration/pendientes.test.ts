@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import { json } from 'express';
 import type { INestApplication } from '@nestjs/common';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module.js';
 import { systemDb } from '../../src/db/client.js';
 import {
@@ -360,5 +360,77 @@ describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
     expect(await svc.dentroDeVentana24h(resi.id)).toBe(false);
 
     svc.onModuleDestroy();
+  });
+});
+
+describe('regla 1 — la FK del consorcio no puede cruzar tenants', () => {
+  it('un admin no puede crear un ticket apuntando al consorcio de otro tenant', async () => {
+    // Este bug lo introdujo el cambio que habilitó al admin a crear tickets: al
+    // saltear la validación de pertenencia junto con el reportanteId, quedó sin
+    // chequear que el consorcio fuera del propio tenant.
+    //
+    // RLS no alcanza: filtra las filas por tenant_id, pero no valida que la FK
+    // apunte dentro del mismo tenant. El ticket se creaba en el tenant del admin
+    // apuntando al consorcio ajeno — base incoherente, y cualquier join
+    // posterior expone el nombre del consorcio de otra administración.
+    const ajeno = (
+      await systemDb.insert(tenantTable).values({ nombre: `${PREFIX}ajeno`, plan: 'basico' }).returning()
+    )[0]!;
+    const consAjeno = (
+      await systemDb
+        .insert(consorcio)
+        .values({ tenantId: ajeno.id, nombre: `${PREFIX}cons-ajeno`, tipo: 'EDIFICIO' })
+        .returning()
+    )[0]!;
+
+    const res = await fetch(`${base}/tickets`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({
+        consorcio_id: consAjeno.id,
+        tipo: 'INFRAESTRUCTURA',
+        titulo: `${PREFIX}intento cross-tenant`,
+        descripcion: 'no debería entrar',
+      }),
+    });
+    expect(res.status).toBe(404);
+
+    // Y el invariante en la base: ningún ticket con FK cruzada.
+    const incoherentes = await systemDb
+      .select({ id: ticket.id })
+      .from(ticket)
+      .innerJoin(consorcio, eq(consorcio.id, ticket.consorcioId))
+      .where(sql`${ticket.tenantId} <> ${consorcio.tenantId}`);
+    expect(incoherentes).toHaveLength(0);
+  });
+
+  it('importar a un consorcio de otro tenant tampoco', async () => {
+    const ajeno = (
+      await systemDb.insert(tenantTable).values({ nombre: `${PREFIX}ajeno2`, plan: 'basico' }).returning()
+    )[0]!;
+    const consAjeno = (
+      await systemDb
+        .insert(consorcio)
+        .values({ tenantId: ajeno.id, nombre: `${PREFIX}cons-ajeno2`, tipo: 'EDIFICIO' })
+        .returning()
+    )[0]!;
+
+    const res = await fetch(`${base}/import/residentes`, {
+      method: 'POST',
+      headers: auth(tokenAdmin),
+      body: JSON.stringify({
+        consorcio_id: consAjeno.id,
+        csv: 'nombre,telefono,unidad,rol\nIntruso Test,+5491199997777,1A,PROPIETARIO',
+        dry_run: false,
+        crear_unidades: true,
+      }),
+    });
+    expect(res.status).toBe(404);
+
+    const enAjeno = await systemDb
+      .select({ id: residente.id })
+      .from(residente)
+      .where(eq(residente.tenantId, ajeno.id));
+    expect(enAjeno).toHaveLength(0);
   });
 });
