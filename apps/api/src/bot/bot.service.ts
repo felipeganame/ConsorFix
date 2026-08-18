@@ -8,7 +8,12 @@ import {
   createVision,
   VISION_PROMPT_VERSION,
 } from '@consorciofix/ai';
-import { createWhatsAppProvider, type InboundMessage } from '@consorciofix/messaging';
+import {
+  createWhatsAppProvider,
+  TelegramProvider,
+  telegramHabilitado,
+  type InboundMessage,
+} from '@consorciofix/messaging';
 import { systemDb } from '../db/client.js';
 import {
   clasificacionIa,
@@ -54,15 +59,41 @@ export class BotService {
   private readonly vision = createVision();
   private readonly messaging = createWhatsAppProvider();
 
+  /**
+   * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
+   * con y sin barra: por WhatsApp nadie escribe "/estado".
+   */
+  private static readonly COMANDOS_SET = new Set([
+    'estado',
+    'estados',
+    'mis reportes',
+    'ayuda',
+    'help',
+    'hola',
+    'menu',
+    'menú',
+  ]);
+
   async handle(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
     if (inbound.kind === 'other') {
       await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.');
       return { status: 'unsupported-kind' };
     }
 
+    // Telegram: si el chat todavía no está vinculado a un residente, el único
+    // camino es pedir el contacto. El teléfono lo verifica la plataforma, así
+    // que nadie puede reclamar el chat de otro escribiendo un número.
+    if (inbound.channel === 'telegram') {
+      const vinculo = await this.resolverTelegram(inbound);
+      if (vinculo.kind === 'pending-link') return { status: vinculo.status };
+      if (vinculo.kind === 'linked') {
+        return this.continuar(inbound, vinculo.residente);
+      }
+    }
+
     const lookup = await this.findResidente(inbound.from);
     if (lookup.kind === 'none') {
-      await this.reply(inbound.from, 'Hola. Tu número no está registrado. Contactá a tu administración.');
+      await this.reply(inbound.from, 'Hola. Tu número no está registrado. Contactá a tu administración.', inbound);
       return { status: 'unregistered' };
     }
     if (lookup.kind === 'ambiguous') {
@@ -80,7 +111,25 @@ export class BotService {
       await this.markWebhookProcessed(inbound.wamid);
       return { status: 'ambiguous-tenant' };
     }
-    const resi = lookup.residente;
+    return this.continuar(inbound, lookup.residente);
+  }
+
+  /**
+   * Flujo del reporte una vez que ya se sabe QUIÉN escribe. Se separó de
+   * `handle` porque Telegram resuelve la identidad por otro camino (chat
+   * vinculado) y necesita entrar acá directamente.
+   */
+  private async continuar(
+    inbound: InboundMessage,
+    resi: { id: string; tenantId: string },
+  ): Promise<{ status: string; ticketId?: string }> {
+
+    // Comandos (RF-B10). Va ANTES de la sesión y del pipeline de reporte:
+    // hasta ahora escribir "estado" creaba un ticket titulado "estado".
+    const comando = (inbound.text ?? '').trim().toLowerCase().replace(/^\//, '');
+    if (inbound.kind === 'text' && BotService.COMANDOS_SET.has(comando)) {
+      return this.responderComando(inbound, resi, comando);
+    }
 
     // Sesión activa: ruteo según step.
     const session = await getActiveSession(inbound.from);
@@ -226,7 +275,7 @@ export class BotService {
       consorcioId: inputs.consorcioId,
       unidadId: inputs.unidadId,
       reportanteId: resi.id,
-      tipo: 'INFRAESTRUCTURA',
+      tipo: inputs.classifiedTipo ?? 'INFRAESTRUCTURA',
       urgencia: inputs.classifiedUrgencia,
       origenSugerido: inputs.classifiedOrigen,
       titulo: inputs.classifiedTitulo,
@@ -299,6 +348,7 @@ export class BotService {
               classifiedCategoria: classified.categoria,
               classifiedOrigen: classified.origen,
               classifiedUrgencia: classified.urgencia,
+              classifiedTipo: classified.tipo,
               classifiedConfianza: classified.confianza,
               classifiedModelo: classified.modelo,
               classifiedPromptVersion: classified.prompt_version,
@@ -323,7 +373,12 @@ export class BotService {
       consorcioId,
       unidadId,
       reportanteId: resi.id,
-      tipo: 'INFRAESTRUCTURA',
+      // RF-F01 opción A: la IA propone el tipo, el admin decide. En CONDUCTA
+      // NO se imputa unidad acusada acá: el texto libre del residente ("el del
+      // 5B") no es una unidad verificada, y atribuirle una denuncia a un vecino
+      // por lo que dedujo un modelo sería exactamente lo que la regla 4
+      // prohíbe. Queda en la sugerencia para que el admin la confirme.
+      tipo: classified.tipo,
       urgencia: classified.urgencia,
       origenSugerido: classified.origen,
       titulo: classified.titulo,
@@ -339,7 +394,9 @@ export class BotService {
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
-      `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
+      classified.tipo === 'CONDUCTA'
+        ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó. El administrador lo va a revisar.`
+        : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
     );
     return { status: 'created', ticketId: t.id };
   }
@@ -501,12 +558,153 @@ export class BotService {
       .where(eq(webhookEvent.wamid, wamid));
   }
 
-  private async reply(to: string, text: string) {
+  /**
+   * RF-B10: consulta del estado de los reportes propios y ayuda.
+   *
+   * Solo muestra tickets donde el residente es el reportante, así que no hace
+   * falta pasar por la matriz de visibilidad: uno siempre puede ver lo suyo.
+   */
+  private async responderComando(
+    inbound: InboundMessage,
+    resi: { id: string; tenantId: string },
+    comando: string,
+  ): Promise<{ status: string }> {
+    if (comando === 'ayuda' || comando === 'help' || comando === 'hola' || comando === 'menu' || comando === 'menú') {
+      await this.reply(
+        inbound.from,
+        [
+          'Hola. Contame qué problema hay y lo registro — podés escribirlo, mandar un audio o una foto.',
+          '',
+          'Comandos:',
+          '• *estado* — cómo vienen tus reportes',
+          '• *ayuda* — este mensaje',
+        ].join('\n'),
+        inbound,
+      );
+      return { status: 'comando-ayuda' };
+    }
+
+    const mios = await systemDb
+      .select({
+        id: ticket.id,
+        titulo: ticket.titulo,
+        estado: ticket.estado,
+        createdAt: ticket.createdAt,
+      })
+      .from(ticket)
+      .where(and(eq(ticket.tenantId, resi.tenantId), eq(ticket.reportanteId, resi.id)))
+      .orderBy(sql`${ticket.createdAt} DESC`)
+      .limit(5);
+
+    if (mios.length === 0) {
+      await this.reply(inbound.from, 'Todavía no tenés reportes. Contame si hay algún problema y lo registro.', inbound);
+      return { status: 'comando-estado-vacio' };
+    }
+
+    const legible: Record<string, string> = {
+      REGISTRADO: 'esperando validación del administrador',
+      VALIDADO: 'validado, en gestión',
+      SOLUCIONADO: 'solucionado',
+      DESCARTADO: 'descartado por el administrador',
+    };
+    const lineas = mios.map(
+      (t) => `• #${t.id.slice(0, 8)} — ${t.titulo}\n   ${legible[t.estado] ?? t.estado}`,
+    );
+    await this.reply(
+      inbound.from,
+      `Tus últimos ${mios.length} reporte${mios.length === 1 ? '' : 's'}:\n\n${lineas.join('\n')}`,
+      inbound,
+    );
+    return { status: 'comando-estado' };
+  }
+
+  /**
+   * Responde por el MISMO canal del que vino el mensaje. Sin esto, un reporte
+   * hecho por Telegram recibiría la respuesta por WhatsApp — o no la recibiría.
+   */
+  private async reply(to: string, text: string, inbound?: InboundMessage) {
     try {
+      if (inbound?.channel === 'telegram') {
+        const destino = inbound.externalId ?? to;
+        await new TelegramProvider().sendText({ to: destino as `+${string}`, text });
+        return;
+      }
       await this.messaging.sendText({ to: to as `+${string}`, text });
     } catch (err) {
       this.log.warn({ err: (err as Error).message, to }, 'reply send failed');
     }
+  }
+
+  /**
+   * Vincula un chat de Telegram con un residente.
+   *
+   * Tres casos:
+   *  - el chat ya está vinculado → se sigue el flujo normal;
+   *  - llega un contacto compartido → se busca por teléfono y se vincula;
+   *  - no está vinculado y no hay contacto → se pide con el botón nativo.
+   *
+   * El teléfono que llega por el botón lo verifica Telegram, no lo escribe el
+   * usuario: por eso vincular es seguro. Si ese teléfono figura en más de una
+   * administración se rechaza, igual que en el ruteo de WhatsApp — atender al
+   * tenant equivocado sería una fuga entre clientes.
+   */
+  private async resolverTelegram(
+    inbound: InboundMessage,
+  ): Promise<
+    | { kind: 'linked'; residente: { id: string; tenantId: string } }
+    | { kind: 'pending-link'; status: string }
+    | { kind: 'fallthrough' }
+  > {
+    const chatId = inbound.externalId;
+    if (!chatId) return { kind: 'fallthrough' };
+
+    const yaVinculado = (
+      await systemDb
+        .select({ id: residente.id, tenantId: residente.tenantId })
+        .from(residente)
+        .where(eq(residente.telegramChatId, chatId))
+        .limit(1)
+    )[0];
+    if (yaVinculado) return { kind: 'linked', residente: yaVinculado };
+
+    if (inbound.contactPhone) {
+      const lookup = await this.findResidente(inbound.contactPhone);
+      if (lookup.kind === 'none') {
+        await this.reply(chatId, 'Ese número no está registrado. Contactá a tu administración.', inbound);
+        return { kind: 'pending-link', status: 'telegram-unregistered' };
+      }
+      if (lookup.kind === 'ambiguous') {
+        this.log.error(
+          { chatId, tenants: lookup.tenants },
+          'telefono de telegram en mas de un tenant: no se vincula',
+        );
+        await this.reply(
+          chatId,
+          'Tu número figura en más de una administración, así que no puedo vincularte automáticamente. Contactá a tu administración.',
+          inbound,
+        );
+        return { kind: 'pending-link', status: 'telegram-ambiguous-tenant' };
+      }
+
+      await systemDb
+        .update(residente)
+        .set({ telegramChatId: chatId, telegramVinculadoAt: new Date() })
+        .where(eq(residente.id, lookup.residente.id));
+      await this.reply(
+        chatId,
+        'Listo, quedaste vinculado. Ya podés contarme qué problema hay y lo registro.',
+        inbound,
+      );
+      return { kind: 'pending-link', status: 'telegram-linked' };
+    }
+
+    if (telegramHabilitado()) {
+      await new TelegramProvider().requestContact(
+        chatId,
+        'Hola. Para registrar tus reportes necesito identificarte. Compartí tu número con el botón de abajo — es el que tiene registrado tu administración.',
+      );
+    }
+    return { kind: 'pending-link', status: 'telegram-awaiting-contact' };
   }
 }
 

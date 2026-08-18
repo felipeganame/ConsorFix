@@ -29,6 +29,7 @@ export interface SessionState {
     // Metadatos del clasificador. Van en la sesión porque el ticket de la rama
     // "no es duplicado" se crea en otro request, y sin esto esa rama quedaba
     // sin registro en `clasificacion_ia` — un agujero silencioso en el dataset.
+    classifiedTipo: 'INFRAESTRUCTURA' | 'CONDUCTA';
     classifiedConfianza: number;
     classifiedModelo: string;
     classifiedPromptVersion: string;

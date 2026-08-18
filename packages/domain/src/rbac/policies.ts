@@ -36,7 +36,11 @@ export interface TicketVisibilityCtx {
   tipo: 'INFRAESTRUCTURA' | 'CONDUCTA';
   origen: 'UNIDAD' | 'ESPACIO_COMUN' | null;
   unidadId: string | null;
+  /** Unidad acusada, solo en CONDUCTA (RF-F01). */
+  unidadReportadaId?: string | null;
   consorcioId: string;
+  /** Quién reportó. Permite que el reportante vea su propio ticket. */
+  reportanteId?: string | null;
 }
 
 export interface ResidenteCtx {
@@ -52,9 +56,17 @@ export function canResidenteSeeTicket(
   // Debe pertenecer al consorcio del ticket.
   if (!user.consorcioIds.has(ticket.consorcioId)) return false;
 
+  // Quien reportó siempre ve su propio ticket. Sin esta cláusula, un reporte
+  // creado sin origen ni unidad (la app móvil los crea así) quedaba invisible
+  // para TODOS, incluido su autor, hasta que el admin lo validara.
+  if (ticket.reportanteId && ticket.reportanteId === user.residenteId) return true;
+
   if (ticket.tipo === 'CONDUCTA') {
-    // Solo ocupantes de la unidad reportada.
-    return ticket.unidadId !== null && user.unidadIds.has(ticket.unidadId);
+    // Solo ocupantes de la unidad ACUSADA. Se lee de `unidadReportadaId`, con
+    // fallback a `unidadId` para los tickets anteriores a la migración 0004,
+    // donde ese campo cumplía ese rol.
+    const acusada = ticket.unidadReportadaId ?? ticket.unidadId;
+    return acusada !== null && acusada !== undefined && user.unidadIds.has(acusada);
   }
   // INFRAESTRUCTURA:
   if (ticket.origen === 'ESPACIO_COMUN') return true;

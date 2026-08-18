@@ -13,6 +13,7 @@ import {
   tenant as tenantTable,
   ticket,
   unidad,
+  usuarioAdmin,
   vinculoResidente,
 } from '../../src/db/schema/index.js';
 
@@ -115,6 +116,8 @@ beforeAll(async () => {
         tenantId: ten.id,
         consorcioId: consA.id,
         unidadId: uniA.id,
+        // La unidad ACUSADA va en su propio campo desde la migración 0004.
+        unidadReportadaId: uniA.id,
         reportanteId: denunciante.id,
         tipo: 'CONDUCTA',
         origen: 'UNIDAD',
@@ -308,5 +311,164 @@ describe('Tokens — un refresh no sirve como access (RF-H04)', () => {
     expect(refreshOcupante).toBeTruthy();
     const abuso = await fetch(`${base}/tickets/${ticketComun.id}`, { headers: auth(refreshOcupante) });
     expect(abuso.status).toBe(401);
+  });
+});
+
+describe('RF-F01 opción A — el admin confirma la unidad acusada', () => {
+  let tokenAdmin: string;
+  let conductaSinUnidad: { id: string };
+
+  beforeAll(async () => {
+    const adminRow = (
+      await systemDb
+        .insert(usuarioAdmin)
+        .values({
+          tenantId: ten.id,
+          nombre: `${PREFIX}admin`,
+          email: `${PREFIX}admin@test.dev`,
+          passwordHash,
+          rol: 'ADMIN',
+        })
+        .returning()
+    )[0]!;
+    expect(adminRow.id).toBeTruthy();
+    tokenAdmin = (await login(`${PREFIX}admin@test.dev`)).accessToken;
+
+    // Lo que crea el bot: conducta REGISTRADA sin unidad acusada, porque la IA
+    // sugiere pero no imputa. El CHECK de la base permite este estado.
+    conductaSinUnidad = (
+      await systemDb
+        .insert(ticket)
+        .values({
+          tenantId: ten.id,
+          consorcioId: consA.id,
+          unidadId: uniA.id,
+          reportanteId: denunciante.id,
+          tipo: 'CONDUCTA',
+          urgencia: 'MEDIA',
+          estado: 'REGISTRADO',
+          titulo: `${PREFIX}posible conducta`,
+          descripcionNormalizada: 'el del 5B hace ruido de noche',
+        })
+        .returning()
+    )[0]!;
+  }, 30_000);
+
+  it('no deja validar una conducta sin decir a qué unidad se acusa', async () => {
+    const res = await fetch(`${base}/tickets/${conductaSinUnidad.id}/transitions`, {
+      method: 'POST',
+      headers: { ...auth(tokenAdmin), 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'VALIDADO', origen: 'UNIDAD' }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { message?: string };
+    expect(String(body.message)).toContain('unidad_reportada_id');
+  });
+
+  it('rechaza una unidad de otro consorcio', async () => {
+    const res = await fetch(`${base}/tickets/${conductaSinUnidad.id}/transitions`, {
+      method: 'POST',
+      headers: { ...auth(tokenAdmin), 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'VALIDADO', origen: 'UNIDAD', unidad_reportada_id: uniB.id }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('valida cuando el admin confirma la unidad, y registra la corrección', async () => {
+    const res = await fetch(`${base}/tickets/${conductaSinUnidad.id}/transitions`, {
+      method: 'POST',
+      headers: { ...auth(tokenAdmin), 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'VALIDADO', origen: 'UNIDAD', unidad_reportada_id: uniA.id }),
+    });
+    expect(res.status).toBe(201);
+
+    const fila = (
+      await systemDb
+        .select({ unidadReportadaId: ticket.unidadReportadaId, estado: ticket.estado })
+        .from(ticket)
+        .where(eq(ticket.id, conductaSinUnidad.id))
+    )[0]!;
+    expect(fila.estado).toBe('VALIDADO');
+    expect(fila.unidadReportadaId).toBe(uniA.id);
+  });
+});
+
+describe('RF-D02 — historial del ticket', () => {
+  it('el admin ve el historial con el autor de cada evento', async () => {
+    const tk = (
+      await systemDb
+        .insert(ticket)
+        .values({
+          tenantId: ten.id,
+          consorcioId: consA.id,
+          unidadId: uniA.id,
+          reportanteId: denunciante.id,
+          tipo: 'INFRAESTRUCTURA',
+          origen: 'ESPACIO_COMUN',
+          urgencia: 'MEDIA',
+          estado: 'REGISTRADO',
+          titulo: `${PREFIX}con historial`,
+          descripcionNormalizada: 'para ver eventos',
+        })
+        .returning()
+    )[0]!;
+    const tokenAdmin = (await login(`${PREFIX}admin@test.dev`)).accessToken;
+
+    // Una transición para que haya algo que leer.
+    const tr = await fetch(`${base}/tickets/${tk.id}/transitions`, {
+      method: 'POST',
+      headers: { ...auth(tokenAdmin), 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'VALIDADO', origen: 'ESPACIO_COMUN', nota: 'confirmado' }),
+    });
+    expect(tr.status).toBe(201);
+
+    const res = await fetch(`${base}/tickets/${tk.id}/historial`, { headers: auth(tokenAdmin) });
+    expect(res.status).toBe(200);
+    const eventos = (await res.json()) as Array<Record<string, unknown>>;
+    expect(eventos.length).toBeGreaterThan(0);
+    const validacion = eventos.find((e) => e['estadoNuevo'] === 'VALIDADO');
+    expect(validacion).toBeDefined();
+    expect(validacion!['nota']).toBe('confirmado');
+    // El admin sí ve quién hizo cada cosa.
+    expect(validacion).toHaveProperty('autorId');
+  });
+
+  it('al residente no le expone el autor de los eventos', async () => {
+    // En CONDUCTA el autor del evento de creación ES el denunciante, así que
+    // devolver autorId filtraría por la puerta de atrás lo que el feed oculta.
+    const res = await fetch(`${base}/tickets/${ticketComun.id}/historial`, {
+      headers: auth(tokenOcupante),
+    });
+    expect(res.status).toBe(200);
+    const eventos = (await res.json()) as Array<Record<string, unknown>>;
+    for (const e of eventos) {
+      expect(e).not.toHaveProperty('autorId');
+    }
+  });
+
+  it('no expone el historial de un ticket que el residente no puede ver', async () => {
+    const res = await fetch(`${base}/tickets/${ticketAjeno.id}/historial`, {
+      headers: auth(tokenOcupante),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('404 para un ticket inexistente', async () => {
+    const res = await fetch(`${base}/tickets/00000000-0000-4000-8000-000000000000/historial`, {
+      headers: auth(tokenOcupante),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('votos — quitar el voto', () => {
+  it('el residente puede sacar su voto de un espacio común', async () => {
+    const res = await fetch(`${base}/tickets/${ticketComun.id}/votes`, {
+      method: 'DELETE',
+      headers: auth(tokenOcupante),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { votosCount: number };
+    expect(body.votosCount).toBeGreaterThanOrEqual(0);
   });
 });

@@ -31,6 +31,13 @@ export const ticket = pgTable('ticket', {
   tenantId: uuid('tenant_id').notNull().references(() => tenant.id, { onDelete: 'cascade' }),
   consorcioId: uuid('consorcio_id').notNull().references(() => consorcio.id, { onDelete: 'cascade' }),
   unidadId: uuid('unidad_id').references(() => unidad.id, { onDelete: 'set null' }),
+  /**
+   * Unidad ACUSADA en un ticket de CONDUCTA (RF-F01). Nula en infraestructura.
+   * Separada de `unidadId` porque ese campo significaba lo contrario según el
+   * tipo, y con uno solo no se puede expresar "yo, de la 4A, denuncio a la 5B".
+   * La visibilidad de conducta (RF-F02) depende de esta columna.
+   */
+  unidadReportadaId: uuid('unidad_reportada_id').references(() => unidad.id, { onDelete: 'set null' }),
   reportanteId: uuid('reportante_id').references(() => residente.id, { onDelete: 'set null' }),
   tipo: text('tipo', { enum: ['INFRAESTRUCTURA', 'CONDUCTA'] }).notNull(),
   origen: text('origen', { enum: ['UNIDAD', 'ESPACIO_COMUN'] }),

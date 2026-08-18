@@ -47,7 +47,7 @@ export class MeService {
       const visible = tickets.filter((t) =>
         canResidenteSeeTicket(
           { residenteId, consorcioIds, unidadIds },
-          { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, consorcioId: t.consorcioId },
+          { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, unidadReportadaId: t.unidadReportadaId, reportanteId: t.reportanteId, consorcioId: t.consorcioId },
         ),
       );
 
@@ -66,7 +66,7 @@ export class MeService {
         .filter((t) =>
           canResidenteSeeCosto(
             { residenteId, consorcioIds, unidadIds },
-            { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, consorcioId: t.consorcioId },
+            { tipo: t.tipo, origen: t.origen, unidadId: t.unidadId, unidadReportadaId: t.unidadReportadaId, reportanteId: t.reportanteId, consorcioId: t.consorcioId },
           ),
         )
         .map((t) => t.id);
@@ -99,6 +99,7 @@ export class MeService {
         id: t.id,
         consorcioId: t.consorcioId,
         unidadId: t.unidadId,
+        unidadReportadaId: t.unidadReportadaId,
         tipo: t.tipo,
         origen: t.origen,
         urgencia: t.urgencia,

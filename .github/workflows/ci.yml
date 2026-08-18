@@ -44,7 +44,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Los unitarios corren con cobertura: packages/domain tiene umbral >=75%
+      # (regla 7), definido en su vitest.config.ts.
       - run: pnpm test
+      - run: pnpm --filter @consorciofix/domain test:coverage
 
   # Las suites de integración y de aislamiento corren contra un Postgres real:
   # necesitan pgvector, las migraciones aplicadas y —sobre todo— la separación
@@ -84,7 +87,11 @@ jobs:
       - name: Bootstrap extensiones y roles
         run: psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -f infra/docker/postgres/init/01-extensions-and-roles.sql
       - run: pnpm db:migrate
-      - run: pnpm test:integration
+      # Con --coverage: los umbrales por módulo de vitest.integration.config.ts
+      # hacen fallar el job si la cobertura de los módulos que nombra la regla 7
+      # (RBAC, tickets) baja. Antes la regla decía "CI bloquea por debajo del
+      # 70%" y era falso, porque no existía ningún umbral definido.
+      - run: pnpm test:integration -- --coverage
 
   isolation:
     name: Multi-tenant isolation

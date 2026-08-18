@@ -12,12 +12,26 @@ export interface OutboundTextMessage {
 }
 
 export interface InboundMessage {
+  /** Id del mensaje en el proveedor. Clave de idempotencia (regla 3). */
   wamid: string;
+  /**
+   * Clave de ruteo. En WhatsApp es el teléfono; en Telegram, el chat_id
+   * mientras no haya vínculo (ver `channel` / `externalId`).
+   */
   from: E164Phone;
   kind: 'text' | 'audio' | 'image' | 'other';
   text?: string;
   mediaId?: string;
   receivedAt: Date;
+  /** Canal de origen. Ausente = whatsapp, por compatibilidad. */
+  channel?: 'whatsapp' | 'telegram';
+  /** Identificador del proveedor cuando no es un teléfono (chat_id). */
+  externalId?: string;
+  /**
+   * Teléfono verificado por la plataforma cuando el usuario comparte su
+   * contacto. Es lo que habilita vincular un chat de Telegram con un residente.
+   */
+  contactPhone?: string;
 }
 
 export interface IMessagingProvider {

@@ -6,5 +6,11 @@ export interface ProcessIncomingJob {
   kind: 'text' | 'audio' | 'image' | 'other';
   text?: string;
   mediaId?: string;
+  /** Canal de origen; ausente = whatsapp (compatibilidad con jobs viejos). */
+  channel?: 'whatsapp' | 'telegram';
+  /** chat_id de Telegram cuando el canal no identifica por teléfono. */
+  externalId?: string;
+  /** Teléfono verificado por la plataforma al compartir contacto. */
+  contactPhone?: string;
   receivedAt: string;
 }

@@ -21,6 +21,8 @@ const TransitionBody = z.object({
   nota: z.string().max(2000).optional(),
   origen: z.enum(['UNIDAD', 'ESPACIO_COMUN']).optional(),
   categoria_id: z.string().uuid().optional(),
+  /** RF-F01: unidad del vecino señalado. Obligatorio al validar una CONDUCTA. */
+  unidad_reportada_id: z.string().uuid().optional(),
 });
 
 const ListQuery = z.object({
@@ -88,6 +90,13 @@ export class TicketsController {
     return this.tickets.byId(tid(req), id, viewer(req));
   }
 
+  /** Historial auditable del ticket (RF-D02). */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
+  @Get(':id/historial')
+  async historial(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tickets.historial(tid(req), id, viewer(req));
+  }
+
   @Roles('SUPER_ADMIN', 'ADMIN')
   @Post(':id/transitions')
   async transition(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
@@ -96,6 +105,7 @@ export class TicketsController {
       ...(dto.nota !== undefined && { nota: dto.nota }),
       ...(dto.origen !== undefined && { origen: dto.origen }),
       ...(dto.categoria_id !== undefined && { categoriaId: dto.categoria_id }),
+      ...(dto.unidad_reportada_id !== undefined && { unidadReportadaId: dto.unidad_reportada_id }),
     });
   }
 

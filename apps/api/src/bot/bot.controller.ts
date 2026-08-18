@@ -10,6 +10,9 @@ const ProcessBody = z.object({
   kind: z.enum(['text', 'audio', 'image', 'other']),
   text: z.string().optional(),
   mediaId: z.string().optional(),
+  channel: z.enum(['whatsapp', 'telegram']).optional(),
+  externalId: z.string().optional(),
+  contactPhone: z.string().optional(),
   receivedAt: z.string().datetime(),
 });
 
@@ -34,6 +37,9 @@ export class BotController {
       kind: dto.kind,
       ...(dto.text !== undefined && { text: dto.text }),
       ...(dto.mediaId !== undefined && { mediaId: dto.mediaId }),
+      ...(dto.channel !== undefined && { channel: dto.channel }),
+      ...(dto.externalId !== undefined && { externalId: dto.externalId }),
+      ...(dto.contactPhone !== undefined && { contactPhone: dto.contactPhone }),
       receivedAt: new Date(dto.receivedAt),
     };
     return this.bot.handle(inbound);

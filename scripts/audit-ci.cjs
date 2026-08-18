@@ -31,14 +31,11 @@ const ALLOWLIST = {
       'Llega por @nestjs/config, que usa lodash para get/set de config, no ' +
       '_.template, y nunca con input del usuario. Sin fix disponible upstream.',
   },
-  'GHSA-gpj5-g38j-94v9': {
-    pkg: 'drizzle-orm',
-    motivo:
-      'SQL injection por identificadores mal escapados en drizzle-orm <0.45.2. ' +
-      'RELEVANTE: requiere upgrade 0.33 -> 0.45 (12 minors, cambios ' +
-      'potencialmente rompientes en el schema y en withTenant/RLS). Agendado ' +
-      'como tarea propia de Fase 6.2, no se cuela en un PR de features.',
-  },
+  // RESUELTA el 2026-08-17: drizzle-orm subió a ^0.45.2, que es la versión
+  // parcheada de GHSA-gpj5-g38j-94v9 (SQL injection por identificadores mal
+  // escapados). El upgrade no requirió cambios de código y las 47 pruebas
+  // siguen pasando. Se deja el registro acá porque era la deuda de seguridad
+  // más seria del backend.
 };
 
 const BLOQUEANTES = new Set(['high', 'critical']);

@@ -158,3 +158,78 @@ describe('canResidenteSeeCosto (G10)', () => {
     expect(canResidenteSeeCosto(externo, comun)).toBe(false);
   });
 });
+
+describe('RF-F01 — unidad reportada en conducta', () => {
+  const consorcio = 'c1';
+  const unidadAcusada = 'u-acusada';
+  const unidadDenunciante = 'u-denunciante';
+
+  const acusado = {
+    residenteId: 'r-acusado',
+    consorcioIds: new Set([consorcio]),
+    unidadIds: new Set([unidadAcusada]),
+  };
+  const denunciante = {
+    residenteId: 'r-denunciante',
+    consorcioIds: new Set([consorcio]),
+    unidadIds: new Set([unidadDenunciante]),
+  };
+  const ajeno = {
+    residenteId: 'r-ajeno',
+    consorcioIds: new Set([consorcio]),
+    unidadIds: new Set(['u-otra']),
+  };
+
+  // El caso real que antes no se podía expresar: el denunciante vive en una
+  // unidad y acusa a otra. Con un solo campo `unidadId` había que elegir cuál
+  // de las dos guardar.
+  const denuncia = {
+    tipo: 'CONDUCTA' as const,
+    origen: 'UNIDAD' as const,
+    unidadId: unidadDenunciante,
+    unidadReportadaId: unidadAcusada,
+    reportanteId: 'r-denunciante',
+    consorcioId: consorcio,
+  };
+
+  it('el ocupante de la unidad acusada ve la denuncia', () => {
+    expect(canResidenteSeeTicket(acusado, denuncia)).toBe(true);
+  });
+
+  it('el denunciante ve su propia denuncia', () => {
+    expect(canResidenteSeeTicket(denunciante, denuncia)).toBe(true);
+  });
+
+  it('un vecino ajeno no ve la denuncia', () => {
+    expect(canResidenteSeeTicket(ajeno, denuncia)).toBe(false);
+  });
+
+  it('el costo de una conducta nunca es visible, ni para el acusado', () => {
+    expect(canResidenteSeeCosto(acusado, denuncia)).toBe(false);
+    expect(canResidenteSeeCosto(denunciante, denuncia)).toBe(false);
+  });
+
+  it('sigue funcionando con tickets anteriores a la migración (unidadId como acusada)', () => {
+    const viejo = {
+      tipo: 'CONDUCTA' as const,
+      origen: null,
+      unidadId: unidadAcusada,
+      consorcioId: consorcio,
+    };
+    expect(canResidenteSeeTicket(acusado, viejo)).toBe(true);
+    expect(canResidenteSeeTicket(ajeno, viejo)).toBe(false);
+  });
+
+  it('el reportante ve su ticket aunque no tenga origen ni unidad', () => {
+    // Caso que la app móvil crea y que antes no veía NADIE, ni su autor.
+    const huerfano = {
+      tipo: 'INFRAESTRUCTURA' as const,
+      origen: null,
+      unidadId: null,
+      reportanteId: 'r-denunciante',
+      consorcioId: consorcio,
+    };
+    expect(canResidenteSeeTicket(denunciante, huerfano)).toBe(true);
+    expect(canResidenteSeeTicket(ajeno, huerfano)).toBe(false);
+  });
+});

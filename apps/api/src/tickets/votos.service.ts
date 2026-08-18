@@ -31,6 +31,8 @@ export class VotosService {
         tipo: t.tipo,
         origen: t.origen,
         unidadId: t.unidadId,
+        unidadReportadaId: t.unidadReportadaId,
+        reportanteId: t.reportanteId,
         consorcioId: t.consorcioId,
       });
       if (!can) throw new ForbiddenException('ticket no visible para votar');

@@ -19,7 +19,8 @@
     "seed": "turbo run seed --filter=@consorciofix/api",
     "ai:eval": "turbo run ai:eval --filter=@consorciofix/ai",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "test:coverage": "turbo run test:coverage"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

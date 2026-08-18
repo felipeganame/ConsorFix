@@ -10,6 +10,9 @@ export const residente = pgTable(
     nombre: text('nombre').notNull(),
     telefonoE164: text('telefono_e164').notNull(),
     email: text('email'),
+    /** Chat de Telegram vinculado (migración 0005). Único en todo el sistema. */
+    telegramChatId: text('telegram_chat_id'),
+    telegramVinculadoAt: timestamp('telegram_vinculado_at', { withTimezone: true }),
     passwordHash: text('password_hash'),
     activo: boolean('activo').notNull().default(true),
     pushToken: text('push_token'),
