@@ -52,14 +52,28 @@ export class TicketsController {
     private readonly votos: VotosService,
   ) {}
 
-  @Roles('RESIDENTE')
+  /**
+   * Creación de ticket. La comparte el residente y el admin.
+   *
+   * El admin la necesita para el criterio de salida de la Fase 1 (docs/05):
+   * "un admin puede cargar su consorcio y crear un ticket manual". Estaba
+   * restringido a RESIDENTE, así que un admin recibía 403 y ese criterio no se
+   * podía demostrar. Pasa cuando alguien reporta por teléfono o en persona.
+   *
+   * Diferencia importante: cuando lo crea un admin, `reportanteId` queda NULL
+   * —no hay un residente que haya reportado— y por eso la validación de
+   * pertenencia al consorcio no aplica: el admin es dueño de todo su tenant.
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RESIDENTE')
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = CreateTicketBody.parse(body);
+    const esResidente = req.user?.kind === 'RESIDENTE';
     return this.tickets.create(tid(req), {
       consorcioId: dto.consorcio_id,
       unidadId: dto.unidad_id,
-      reportanteId: req.user!.sub,
+      reportanteId: esResidente ? req.user!.sub : null,
+      ...(esResidente ? {} : { creadoPorAdminId: req.user!.sub }),
       tipo: dto.tipo,
       urgencia: dto.urgencia,
       titulo: dto.titulo,

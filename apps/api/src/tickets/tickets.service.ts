@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { assertTransition, canResidenteSeeTicket, type TicketState } from '@consorciofix/domain';
-import { clasificacionIa, ticket, ticketEvento, unidad } from '../db/schema/index.js';
+import { categoria, clasificacionIa, consorcio, ticket, ticketEvento, unidad } from '../db/schema/index.js';
 import type { TxClient } from '../db/client.js';
 import { db, withTenant } from '../db/client.js';
 import { loadResidenteCtx } from '../common/residente-ctx.js';
@@ -23,6 +23,8 @@ export interface CreateTicketInput {
   titulo: string;
   descripcionNormalizada: string;
   clientGeneratedId?: string;
+  /** Admin que lo carga a mano, cuando no hay reportante. */
+  creadoPorAdminId?: string;
 }
 
 @Injectable()
@@ -44,6 +46,21 @@ export class TicketsService {
         if (existing[0]) return existing[0];
       }
 
+      // El consorcio DEBE pertenecer al tenant. RLS no alcanza acá: filtra las
+      // filas por `tenant_id`, pero no valida que la FK apunte dentro del mismo
+      // tenant. Sin este chequeo, un admin podía crear un ticket en SU tenant
+      // apuntando al consorcio de OTRO — no filtra datos, pero deja la base
+      // incoherente y cualquier join posterior expone el nombre del consorcio
+      // ajeno. Verificado explotable antes de este chequeo.
+      const consorcioPropio = (
+        await tx
+          .select({ id: consorcio.id })
+          .from(consorcio)
+          .where(and(eq(consorcio.tenantId, tenantId), eq(consorcio.id, input.consorcioId)))
+          .limit(1)
+      )[0];
+      if (!consorcioPropio) throw new NotFoundException('consorcio not found');
+
       // Pertenencia (RF-H03): el reportante solo puede crear tickets en un
       // consorcio donde tenga vínculo activo, y la unidad imputada debe
       // pertenecer a ese consorcio. Sin esto un residente podía crear tickets
@@ -52,23 +69,29 @@ export class TicketsService {
       // Ojo: NO se exige que sea ocupante de `unidadId`. En CONDUCTA la unidad
       // es justamente la del vecino denunciado, y en infraestructura uno puede
       // reportar la filtración de otra unidad. El consorcio es el límite real.
+      // La unidad se valida SIEMPRE, no solo cuando hay reportante. Estaba
+      // dentro del `if (input.reportanteId)`, y el admin manda reportanteId
+      // null, así que por ese camino se salteaba entera: podía imputar una
+      // unidad de otro consorcio o de otro tenant. En CONDUCTA la unidad
+      // imputada ES la acusación, así que imputar una ajena es grave.
+      if (input.unidadId) {
+        const u = (
+          await tx
+            .select({ consorcioId: unidad.consorcioId })
+            .from(unidad)
+            .where(and(eq(unidad.tenantId, tenantId), eq(unidad.id, input.unidadId)))
+            .limit(1)
+        )[0];
+        if (!u) throw new BadRequestException('unidad inexistente');
+        if (u.consorcioId !== input.consorcioId) {
+          throw new BadRequestException('la unidad no pertenece a ese consorcio');
+        }
+      }
+
       if (input.reportanteId) {
         const ctx = await loadResidenteCtx(tx, tenantId, input.reportanteId);
         if (!ctx.consorcioIds.has(input.consorcioId)) {
           throw new ForbiddenException('sin vínculo activo en ese consorcio');
-        }
-        if (input.unidadId) {
-          const u = (
-            await tx
-              .select({ consorcioId: unidad.consorcioId })
-              .from(unidad)
-              .where(and(eq(unidad.tenantId, tenantId), eq(unidad.id, input.unidadId)))
-              .limit(1)
-          )[0];
-          if (!u) throw new BadRequestException('unidad inexistente');
-          if (u.consorcioId !== input.consorcioId) {
-            throw new BadRequestException('la unidad no pertenece a ese consorcio');
-          }
         }
       }
 
@@ -89,7 +112,20 @@ export class TicketsService {
         })
         .returning();
       const t = inserted[0]!;
-      await this.recordEvent(tx, tenantId, t.id, 'CREATE', null, 'REGISTRADO', input.reportanteId, 'RESIDENTE', null);
+      // El autor real: si no hay reportante, lo cargó el admin a mano. Decir
+      // 'RESIDENTE' con autorId null en un historial que RF-D02 quiere
+      // auditable es directamente registrar mal quién hizo qué.
+      await this.recordEvent(
+        tx,
+        tenantId,
+        t.id,
+        'CREATE',
+        null,
+        'REGISTRADO',
+        input.reportanteId ?? input.creadoPorAdminId ?? null,
+        input.reportanteId ? 'RESIDENTE' : 'ADMIN',
+        null,
+      );
       return t;
     });
   }
@@ -182,13 +218,19 @@ export class TicketsService {
         .where(and(eq(ticketEvento.tenantId, tenantId), eq(ticketEvento.ticketId, ticketId)))
         .orderBy(ticketEvento.at);
 
+      // En CONDUCTA se recorta más: los ocupantes de la unidad ACUSADA ven el
+      // ticket, así que la `nota` libre del admin ("descarto, el del 3B se
+      // queja de todo") les llegaría entera. Y `autorTipo: 'RESIDENTE'` en el
+      // evento de creación le confirma al acusado que lo denunció un vecino y
+      // no la administración. El módulo se toma el trabajo de anonimizar al
+      // denunciante; dejar el texto libre abierto lo desarma.
+      const esConducta = t.tipo === 'CONDUCTA';
       return eventos.map((e) => ({
         transicion: e.transicion,
         estadoAnterior: e.estadoAnterior,
         estadoNuevo: e.estadoNuevo,
-        nota: e.nota,
-        autorTipo: e.autorTipo,
-        // El autor concreto solo para el admin (ver docblock).
+        ...(esAdmin || !esConducta ? { nota: e.nota } : {}),
+        ...(esAdmin || !esConducta ? { autorTipo: e.autorTipo } : {}),
         ...(esAdmin ? { autorId: e.autorId } : {}),
         at: e.at,
       }));
@@ -239,6 +281,25 @@ export class TicketsService {
           'validar una CONDUCTA requiere `unidad_reportada_id`: la unidad del vecino señalado',
         );
       }
+      // La categoría también tiene que ser del tenant Y del consorcio del
+      // ticket. Sin esto, el admin podía apuntar `categoria_id` a una categoría
+      // ajena, y en el mismo request ese id se copiaba a
+      // `clasificacion_ia.corregido_por_admin` — o sea que la contaminación
+      // quedaba persistida en dos tablas, una de ellas el dataset de G16.
+      if (opts.categoriaId) {
+        const cat = (
+          await tx
+            .select({ consorcioId: categoria.consorcioId })
+            .from(categoria)
+            .where(and(eq(categoria.tenantId, tenantId), eq(categoria.id, opts.categoriaId)))
+            .limit(1)
+        )[0];
+        if (!cat) throw new BadRequestException('categoría inexistente');
+        if (cat.consorcioId && cat.consorcioId !== t.consorcioId) {
+          throw new BadRequestException('la categoría no pertenece al consorcio del ticket');
+        }
+      }
+
       if (opts.unidadReportadaId) {
         const u = (
           await tx

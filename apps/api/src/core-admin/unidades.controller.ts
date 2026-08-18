@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { AuthedRequest } from '../auth/auth.guard.js';
 import { Roles } from '../auth/roles.guard.js';
 import { withTenant } from '../db/client.js';
-import { unidad } from '../db/schema/index.js';
+import { assertMismoTenant } from '../common/assert-mismo-tenant.js';
+import { consorcio, unidad } from '../db/schema/index.js';
 import { tenantIdFromReq } from './tenant-ctx.js';
 
 const CreateBody = z.object({
@@ -37,24 +38,29 @@ export class UnidadesController {
   async create(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = CreateBody.parse(body);
     const tid = tenantIdFromReq(req);
-    return withTenant(tid, async (tx) =>
-      (await tx
-        .insert(unidad)
-        .values({ tenantId: tid, consorcioId: dto.consorcio_id, etiqueta: dto.etiqueta })
-        .returning())[0],
-    );
+    return withTenant(tid, async (tx) => {
+      // El consorcio tiene que ser del tenant: RLS no valida el destino de la FK.
+      await assertMismoTenant(tx, tid, { columnaId: consorcio.id, columnaTenant: consorcio.tenantId, nombre: 'consorcio' }, dto.consorcio_id);
+      return (
+        await tx
+          .insert(unidad)
+          .values({ tenantId: tid, consorcioId: dto.consorcio_id, etiqueta: dto.etiqueta })
+          .returning()
+      )[0];
+    });
   }
 
   @Post('bulk')
   async bulk(@Req() req: AuthedRequest, @Body() body: unknown) {
     const dto = BulkBody.parse(body);
     const tid = tenantIdFromReq(req);
-    return withTenant(tid, async (tx) =>
-      tx
+    return withTenant(tid, async (tx) => {
+      await assertMismoTenant(tx, tid, { columnaId: consorcio.id, columnaTenant: consorcio.tenantId, nombre: 'consorcio' }, dto.consorcio_id);
+      return tx
         .insert(unidad)
         .values(dto.etiquetas.map((e) => ({ tenantId: tid, consorcioId: dto.consorcio_id, etiqueta: e })))
         .onConflictDoNothing()
-        .returning(),
-    );
+        .returning();
+    });
   }
 }

@@ -55,8 +55,8 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin &&
       mc mb --ignore-existing local/consorciofix-media &&
-      mc anonymous set download local/consorciofix-media &&
-      echo 'minio bucket ready'
+      mc anonymous set none local/consorciofix-media &&
+      echo 'minio bucket ready (privado: la media de un ticket de unidad o de conducta no puede ser publica)'
       "
 
   mock-whatsapp:

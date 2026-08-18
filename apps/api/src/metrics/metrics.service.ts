@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { gasto, ticket } from '../db/schema/index.js';
+import { clasificacionIa, gasto, ticket } from '../db/schema/index.js';
 import { withTenant } from '../db/client.js';
 
 @Injectable()
@@ -57,11 +57,42 @@ export class MetricsService {
         .where(and(...gastoConds))
         .groupBy(gasto.moneda);
 
+      // Costo de IA (RF-C07). Responde una pregunta de negocio directa: cuánto
+      // sale clasificar un ticket, que es lo que define si el precio del SaaS
+      // cierra. El join va por ticket para que el filtro por consorcio aplique
+      // igual que en el resto de las métricas.
+      const costoIa = (
+        await tx
+          .select({
+            tickets: sql<number>`count(*)::int`,
+            tokensIn: sql<number>`coalesce(sum(${clasificacionIa.tokensIn}), 0)::int`,
+            tokensOut: sql<number>`coalesce(sum(${clasificacionIa.tokensOut}), 0)::int`,
+            totalUsd: sql<string>`coalesce(sum(${clasificacionIa.costoUsd}), 0)::text`,
+            promedioUsd: sql<string>`coalesce(avg(${clasificacionIa.costoUsd}), 0)::text`,
+            latenciaP50Ms: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${clasificacionIa.latenciaMs}), 0)::int`,
+            corregidosPorAdmin: sql<number>`count(${clasificacionIa.corregidoPorAdmin})::int`,
+          })
+          .from(clasificacionIa)
+          .innerJoin(ticket, eq(ticket.id, clasificacionIa.ticketId))
+          .where(baseCond)
+      )[0];
+
       return {
         byEstado,
         byUrgencia,
         avgResolutionMinutes: ttrRows[0]?.avgMinutes ?? null,
         costosConfirmados: gastosRows.map((g) => ({ moneda: g.moneda, total: Number(g.total) })),
+        costoIa: {
+          ticketsClasificados: costoIa?.tickets ?? 0,
+          tokensIn: costoIa?.tokensIn ?? 0,
+          tokensOut: costoIa?.tokensOut ?? 0,
+          totalUsd: Number(costoIa?.totalUsd ?? 0),
+          promedioPorTicketUsd: Number(costoIa?.promedioUsd ?? 0),
+          latenciaP50Ms: costoIa?.latenciaP50Ms ?? 0,
+          // Tasa de corrección del admin: qué tan seguido la IA se equivoca.
+          // Es la métrica que alimenta el dataset de casos reales (G16).
+          corregidosPorAdmin: costoIa?.corregidosPorAdmin ?? 0,
+        },
       };
     });
   }

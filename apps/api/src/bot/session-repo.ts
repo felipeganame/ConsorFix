@@ -7,7 +7,7 @@ import { sesionBot } from '../db/schema/index.js';
  * `estado_flujo` is a free-form jsonb blob shaped by the bot flow steps.
  */
 export interface SessionState {
-  step?: 'pick_consorcio' | 'confirm_dedup';
+  step?: 'pick_consorcio' | 'confirm_dedup' | 'confirm_reporte';
   pendingText?: string;
   options?: Array<{ consorcioId: string; unidadId: string; nombre: string }>;
   // For 'confirm_dedup' step:
@@ -34,6 +34,32 @@ export interface SessionState {
     classifiedModelo: string;
     classifiedPromptVersion: string;
     classifiedUbicacion?: string;
+    /**
+     * Telemetría del clasificador (RF-C07). Va en la sesión porque el ticket se
+     * crea en OTRO request —el de la confirmación—, y sin esto el costo quedaba
+     * NULL para todos los tickets del bot.
+     */
+    classifiedUso?: {
+      tokensIn?: number;
+      tokensOut?: number;
+      costoUsd?: number;
+      latenciaMs?: number;
+      cacheHit?: boolean;
+    };
+    /**
+     * Adjunto pendiente (RF-B09). Los bytes NO se guardan en la sesión: se
+     * suben al storage antes de pedir la confirmación y acá viaja solo la
+     * referencia. Guardar megabytes en un jsonb de sesión sería un problema
+     * distinto, y las URLs del proveedor expiran en minutos, así que el momento
+     * de subir es cuando llegan.
+     */
+    mediaSubida?: {
+      tipo: 'FOTO' | 'AUDIO';
+      storageUrl: string;
+      proveedorId: string;
+      mimeType: string;
+      sizeBytes: number;
+    };
     embedding: number[];
   };
 }

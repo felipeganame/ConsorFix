@@ -119,6 +119,28 @@
 
 ---
 
+---
+
+## Estado real al 2026-08-18
+
+Verificado ejecutando, no leyendo. Lo que sigue vale más que las tildes de las tablas de arriba.
+
+| Fase | Estado | Qué falta concretamente |
+|---|---|---|
+| 0 — Fundaciones | ✅ | Branch protection en `main` (tarea 0.3) nunca se configuró |
+| 1 — Dominio, RBAC, tickets | ✅ | Nada de alcance vigente. RF-D03/D04/D07 superados por ADR-002 |
+| 2 — WhatsApp texto | 🟡 | Falta el paso de resumen+confirmación (RF-B06), la ventana de 24 h y las plantillas HSM versionadas (RF-G02). Las notificaciones salen fire-and-forget, sin cola |
+| 3 — IA real | 🟡 | **Solo falta poner la API key.** Dataset de 302 casos, `ai:eval` con umbrales y persistencia de sugerencias listos. Quedan el panel de baja confianza (3.7) y la telemetría de costo (3.8) |
+| 4 — App móvil | 🟡 | Push notifications (`expo-notifications` no está ni en dependencias) y E2E Maestro. La app tampoco muestra `costosConfirmados` |
+| 5 — Conductas y costos | ✅ | Nada. RF-F01 cerrado con la opción A |
+| 6 — Hardening | ❌ | Sin arrancar, salvo el gate de cobertura y el upgrade de drizzle que ya se hicieron |
+
+**Canales de bot:** además de WhatsApp hay Telegram, los dos detrás de `IMessagingProvider`. Telegram no necesita verificación de Meta Business ni plantillas aprobadas, así que conviene para desarrollar.
+
+**Lo que más conviene atacar ahora**, en orden: la key de IA y su corrida de `ai:eval` (desbloquea el capítulo de validación), la cobertura de `bot` (10 %) y `webhooks` (16 %), y la cola de notificaciones.
+
+---
+
 ## Fase 6 — Endurecimiento y piloto (3 semanas)
 
 | # | Tarea | Modelo | RFs |

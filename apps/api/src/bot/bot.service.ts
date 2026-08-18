@@ -18,6 +18,7 @@ import { systemDb } from '../db/client.js';
 import {
   clasificacionIa,
   consorcio,
+  media,
   residente,
   ticket,
   ticketEvento,
@@ -26,6 +27,7 @@ import {
   voto,
   webhookEvent,
 } from '../db/schema/index.js';
+import { StorageService } from '../storage/storage.service.js';
 import { findDedupCandidate } from './dedup.js';
 import {
   clearSession,
@@ -50,6 +52,23 @@ import {
  * Implements RF-B01..B03, B05 (mock), B06, B07. Audio (B04) llega con
  * la integración real de Whisper.
  */
+/** Referencia a un adjunto ya subido al storage, sin ticket asociado (RF-B09). */
+interface MediaSubida {
+  tipo: 'FOTO' | 'AUDIO';
+  storageUrl: string;
+  proveedorId: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/** Bytes de un adjunto que todavía no tiene ticket al que asociarse (RF-B09). */
+interface MediaPendiente {
+  tipo: 'FOTO' | 'AUDIO';
+  contentType: string;
+  bytes: ArrayBuffer;
+  proveedorId: string;
+}
+
 @Injectable()
 export class BotService {
   private readonly log = new Logger(BotService.name);
@@ -58,6 +77,8 @@ export class BotService {
   private readonly transcriber = createTranscriber();
   private readonly vision = createVision();
   private readonly messaging = createWhatsAppProvider();
+
+  constructor(private readonly storage: StorageService) {}
 
   /**
    * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
@@ -87,6 +108,7 @@ export class BotService {
       const vinculo = await this.resolverTelegram(inbound);
       if (vinculo.kind === 'pending-link') return { status: vinculo.status };
       if (vinculo.kind === 'linked') {
+        await this.registrarInbound(vinculo.residente.id);
         return this.continuar(inbound, vinculo.residente);
       }
     }
@@ -111,6 +133,9 @@ export class BotService {
       await this.markWebhookProcessed(inbound.wamid);
       return { status: 'ambiguous-tenant' };
     }
+    // RF-G02: registrar el inbound abre la ventana de 24 h para poder
+    // responderle con texto libre en vez de una plantilla aprobada.
+    await this.registrarInbound(lookup.residente.id);
     return this.continuar(inbound, lookup.residente);
   }
 
@@ -122,6 +147,7 @@ export class BotService {
   private async continuar(
     inbound: InboundMessage,
     resi: { id: string; tenantId: string },
+    mediaYaSubida?: MediaSubida,
   ): Promise<{ status: string; ticketId?: string }> {
 
     // Comandos (RF-B10). Va ANTES de la sesión y del pipeline de reporte:
@@ -139,6 +165,9 @@ export class BotService {
     if (session?.state.step === 'confirm_dedup') {
       return this.handleDedupConfirm(inbound, resi, session.state);
     }
+    if (session?.state.step === 'confirm_reporte') {
+      return this.handleReporteConfirm(inbound, resi, session.state);
+    }
 
     const consorcios = await this.consorciosDelResidente(resi.id, resi.tenantId);
     if (consorcios.length === 0) {
@@ -148,6 +177,8 @@ export class BotService {
 
     // Para audio: descargar media + transcribir (RF-B04). Si falla, pedir texto.
     let text = (inbound.text ?? '').trim();
+    // La media viaja hasta que exista el ticket al que asociarla (RF-B09).
+    let mediaPendiente: MediaPendiente | null = null;
     if (inbound.kind === 'audio') {
       if (!inbound.mediaId) {
         await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.');
@@ -155,6 +186,15 @@ export class BotService {
       }
       try {
         const dl = await this.messaging.downloadMedia(inbound.mediaId);
+        // RF-B09: se guarda ANTES de transcribir. Las URLs del proveedor
+        // expiran en minutos, así que este es el único momento en que existen
+        // los bytes. Si el storage falla, el reporte sigue.
+        mediaPendiente = {
+          tipo: 'AUDIO',
+          contentType: dl.contentType,
+          bytes: dl.bytes,
+          proveedorId: inbound.mediaId,
+        };
         const tr = await this.transcriber.transcribe(dl.bytes, { language: 'es' });
         text = (tr.text ?? '').trim();
         if (text.length === 0) {
@@ -173,6 +213,12 @@ export class BotService {
       }
       try {
         const dl = await this.messaging.downloadMedia(inbound.mediaId);
+        mediaPendiente = {
+          tipo: 'FOTO',
+          contentType: dl.contentType,
+          bytes: dl.bytes,
+          proveedorId: inbound.mediaId,
+        };
         const v = await this.vision.describe(dl.bytes, {
           contentType: dl.contentType,
           promptVersion: VISION_PROMPT_VERSION,
@@ -211,7 +257,15 @@ export class BotService {
     }
 
     const choice = consorcios[0]!;
-    return this.classifyDedupCreate(inbound, resi, choice.consorcioId, choice.unidadId, text);
+    return this.classifyDedupCreate(
+      inbound,
+      resi,
+      choice.consorcioId,
+      choice.unidadId,
+      text,
+      mediaPendiente,
+      mediaYaSubida,
+    );
   }
 
   private async handleConsorcioChoice(
@@ -281,20 +335,9 @@ export class BotService {
       titulo: inputs.classifiedTitulo,
       descripcion: inputs.classifiedDescripcion,
       embedding: inputs.embedding,
-      clasificacion: {
-        sugerido: {
-          titulo: inputs.classifiedTitulo,
-          descripcion_normalizada: inputs.classifiedDescripcion,
-          categoria: inputs.classifiedCategoria,
-          origen: inputs.classifiedOrigen,
-          urgencia: inputs.classifiedUrgencia,
-          ...(inputs.classifiedUbicacion !== undefined && { ubicacion: inputs.classifiedUbicacion }),
-        },
-        confianza: inputs.classifiedConfianza,
-        modelo: inputs.classifiedModelo,
-        promptVersion: inputs.classifiedPromptVersion,
-      },
+      clasificacion: sugerenciaDeSesion(inputs),
     });
+    await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
     await this.reply(
       inbound.from,
       `Ok, registré un reporte nuevo (#${t.id.slice(0, 8)}). Categoría: ${inputs.classifiedCategoria}, urgencia: ${inputs.classifiedUrgencia}. El administrador lo va a validar.`,
@@ -308,6 +351,8 @@ export class BotService {
     consorcioId: string,
     unidadId: string | null,
     text: string,
+    mediaPendiente: MediaPendiente | null = null,
+    mediaYaSubida?: MediaSubida,
   ): Promise<{ status: string; ticketId: string }> {
     let classified;
     try {
@@ -368,6 +413,42 @@ export class BotService {
       }
     }
 
+    // RF-B06: antes de crear, mostrar el resumen y pedir confirmación. Está
+    // especificado en docs/02 (RF-B06), docs/03 (P1, nodos N y O) y en la tarea
+    // 2.3 del plan, y es el criterio de salida de la Fase 2 ("escribís al bot,
+    // CONFIRMÁS el reporte, aparece en la bandeja"). Faltaba por completo: el
+    // bot creaba el ticket directo, sin que el residente pudiera corregir nada.
+    if (process.env.BOT_CONFIRMACION_DISABLED !== '1') {
+      // RF-B09: la media se sube ACÁ, no al crear el ticket. Las URLs del
+      // proveedor expiran en minutos y el ticket se crea en otro request, así
+      // que si se esperara a la confirmación los bytes ya no existirían. En la
+      // sesión viaja solo la referencia, no los megabytes.
+      const subida = mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente));
+      await upsertSession(inbound.from, {
+        step: 'confirm_reporte',
+        pendingTicketInputs: {
+          consorcioId,
+          unidadId,
+          classifiedTitulo: classified.titulo,
+          classifiedDescripcion: classified.descripcion_normalizada,
+          classifiedCategoria: classified.categoria,
+          classifiedOrigen: classified.origen,
+          classifiedUrgencia: classified.urgencia,
+          classifiedTipo: classified.tipo,
+          classifiedConfianza: classified.confianza,
+          classifiedModelo: classified.modelo,
+          classifiedPromptVersion: classified.prompt_version,
+          ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+          ...(classified.uso ? { classifiedUso: classified.uso } : {}),
+          ...(subida ? { mediaSubida: subida } : {}),
+          embedding,
+        },
+      });
+      await this.markWebhookProcessed(inbound.wamid);
+      await this.reply(inbound.from, resumenDeReporte(classified), inbound);
+      return { status: 'awaiting-report-confirm', ticketId: '' };
+    }
+
     const t = await this.createTicket({
       tenantId: resi.tenantId,
       consorcioId,
@@ -389,8 +470,14 @@ export class BotService {
         confianza: classified.confianza,
         modelo: classified.modelo,
         promptVersion: classified.prompt_version,
+        ...(classified.uso ? { uso: classified.uso } : {}),
       },
     });
+    await this.asociarMediaSubida(
+      resi.tenantId,
+      t.id,
+      mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente)),
+    );
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
@@ -498,6 +585,14 @@ export class BotService {
       confianza: number;
       modelo: string;
       promptVersion: string;
+      /** Telemetría de costo (RF-C07). La devuelve el propio SDK. */
+      uso?: {
+        tokensIn?: number;
+        tokensOut?: number;
+        costoUsd?: number;
+        latenciaMs?: number;
+        cacheHit?: boolean;
+      };
     };
   }) {
     const vecLit = input.embedding.length > 0 ? `[${input.embedding.join(',')}]` : null;
@@ -524,6 +619,7 @@ export class BotService {
       // No rompe la creación del ticket si falla: la sugerencia es telemetría,
       // no parte del contrato con el residente.
       try {
+        const uso = input.clasificacion.uso;
         await systemDb.insert(clasificacionIa).values({
           tenantId: input.tenantId,
           ticketId: inserted.id,
@@ -531,6 +627,12 @@ export class BotService {
           confianza: input.clasificacion.confianza,
           modelo: input.clasificacion.modelo,
           promptVersion: input.clasificacion.promptVersion,
+          ...(uso?.tokensIn !== undefined && { tokensIn: uso.tokensIn }),
+          ...(uso?.tokensOut !== undefined && { tokensOut: uso.tokensOut }),
+          // numeric() en drizzle espera string para no perder precisión.
+          ...(uso?.costoUsd !== undefined && { costoUsd: uso.costoUsd.toFixed(6) }),
+          ...(uso?.latenciaMs !== undefined && { latenciaMs: uso.latenciaMs }),
+          ...(uso?.cacheHit !== undefined && { cacheHit: uso.cacheHit }),
         });
       } catch (err) {
         this.log.error(
@@ -616,6 +718,166 @@ export class BotService {
       inbound,
     );
     return { status: 'comando-estado' };
+  }
+
+  /**
+   * RF-B06: el residente confirma, corrige o cancela el resumen.
+   *
+   * "Corregir" acá significa mandar el reporte de nuevo: dejar que edite campo
+   * por campo por WhatsApp sería un formulario conversacional entero, y el
+   * criterio del RF se cumple con poder rechazar el resumen y reescribirlo.
+   */
+  private async handleReporteConfirm(
+    inbound: InboundMessage,
+    resi: { id: string; tenantId: string },
+    state: SessionState,
+  ): Promise<{ status: string; ticketId?: string }> {
+    const raw = (inbound.text ?? '').trim().toLowerCase();
+    const inputs = state.pendingTicketInputs;
+    if (!inputs) {
+      await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
+      await this.reply(inbound.from, 'Se me perdió el reporte. ¿Me lo contás de nuevo?', inbound);
+      return { status: 'confirm-session-corrupt' };
+    }
+
+    const si = /^(s[ií]|si|dale|ok|confirmo|correcto|1)$/.test(raw);
+    const no = /^(no|cancelar|mal|2)$/.test(raw);
+
+    if (!si && !no) {
+      // Cualquier otra cosa se interpreta como una corrección: el residente
+      // está reescribiendo el reporte. Antes se le respondía "No te entendí" y
+      // quedaba atrapado hasta tipear literalmente sí o no, con su texto
+      // descartado en cada vuelta — y una FOTO acá dejaba el webhook_event en
+      // PENDIENTE para siempre.
+      await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
+      if (inbound.kind === 'text' && raw.length > 0) {
+        await this.reply(inbound.from, 'Ok, tomo esto como la versión corregida.', inbound);
+        // Se reprocesa como reporte nuevo, ya sin sesión, ARRASTRANDO la media
+        // que ya estaba subida: el residente mandó la foto y después corrigió el
+        // texto, y perderla acá sería perder exactamente la evidencia que
+        // RF-B09 existe para conservar.
+        return this.continuar(inbound, resi, inputs.mediaSubida);
+      }
+      await this.reply(
+        inbound.from,
+        'Para registrarlo necesito que me confirmes: respondé *Sí*, o contame de nuevo qué pasa.',
+        inbound,
+      );
+      return { status: 'confirm-invalid' };
+    }
+
+    if (no) {
+      await clearSession(inbound.from);
+      await this.markWebhookProcessed(inbound.wamid);
+      await this.reply(
+        inbound.from,
+        'Listo, lo descarté. Contame de nuevo qué pasa y lo registro como me digas.',
+        inbound,
+      );
+      return { status: 'report-rejected' };
+    }
+
+    // El ticket se crea ANTES de limpiar la sesión y de marcar el webhook.
+    // Al revés, si el insert fallaba el reporte desaparecía: sesión borrada,
+    // webhook marcado como procesado (así que un reintento de Meta se
+    // descartaba) y el residente sin ticket ni aviso.
+    const t = await this.createTicket({
+      tenantId: resi.tenantId,
+      consorcioId: inputs.consorcioId,
+      unidadId: inputs.unidadId,
+      reportanteId: resi.id,
+      tipo: inputs.classifiedTipo ?? 'INFRAESTRUCTURA',
+      urgencia: inputs.classifiedUrgencia,
+      origenSugerido: inputs.classifiedOrigen,
+      titulo: inputs.classifiedTitulo,
+      descripcion: inputs.classifiedDescripcion,
+      embedding: inputs.embedding,
+      clasificacion: sugerenciaDeSesion(inputs),
+    });
+
+    await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
+    await clearSession(inbound.from);
+    await this.markWebhookProcessed(inbound.wamid);
+
+    await this.reply(
+      inbound.from,
+      inputs.classifiedTipo === 'CONDUCTA'
+        ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó.`
+        : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). El administrador lo va a validar.`,
+      inbound,
+    );
+    return { status: 'created-confirmed', ticketId: t.id };
+  }
+
+  /** Marca el último inbound del residente; define la ventana de 24 h (RF-G02). */
+  private async registrarInbound(residenteId: string): Promise<void> {
+    try {
+      await systemDb
+        .update(residente)
+        .set({ ultimoInboundAt: new Date() })
+        .where(eq(residente.id, residenteId));
+    } catch (err) {
+      // No es motivo para no atender el reporte.
+      this.log.warn({ err: (err as Error).message }, 'no se pudo registrar el inbound');
+    }
+  }
+
+  /**
+   * Sube el adjunto al storage y devuelve su referencia (RF-B09).
+   *
+   * Se llama en cuanto llegan los bytes, ANTES de pedir la confirmación: las
+   * URLs del proveedor expiran en minutos y el ticket puede crearse en otro
+   * request. Si el storage no está disponible devuelve null y el flujo sigue —
+   * perder la foto es malo, hacerle perder el reporte al residente es peor.
+   */
+  private async subirMedia(
+    tenantId: string,
+    pendiente: MediaPendiente | null,
+  ): Promise<MediaSubida | undefined> {
+    if (!pendiente) return undefined;
+    try {
+      const subido = await this.storage.subir(
+        tenantId,
+        pendiente.tipo === 'FOTO' ? 'foto' : 'audio',
+        pendiente.bytes,
+        pendiente.contentType,
+      );
+      if (!subido) return undefined;
+      return {
+        tipo: pendiente.tipo,
+        storageUrl: subido.url,
+        proveedorId: pendiente.proveedorId,
+        mimeType: pendiente.contentType,
+        sizeBytes: subido.sizeBytes,
+      };
+    } catch (err) {
+      this.log.error({ err: (err as Error).message }, 'no se pudo subir la media');
+      return undefined;
+    }
+  }
+
+  /** Asocia al ticket una media ya subida (RF-B09). */
+  private async asociarMediaSubida(
+    tenantId: string,
+    ticketId: string,
+    subida: MediaSubida | undefined,
+  ): Promise<void> {
+    if (!subida) return;
+    try {
+      await systemDb.insert(media).values({
+        tenantId,
+        ticketId,
+        tipo: subida.tipo,
+        storageUrl: subida.storageUrl,
+        waMediaId: subida.proveedorId,
+        sizeBytes: subida.sizeBytes,
+        mimeType: subida.mimeType,
+      });
+    } catch (err) {
+      this.log.error({ err: (err as Error).message, ticketId }, 'no se pudo asociar la media');
+    }
   }
 
   /**
@@ -706,6 +968,65 @@ export class BotService {
     }
     return { kind: 'pending-link', status: 'telegram-awaiting-contact' };
   }
+}
+
+/**
+ * Arma la sugerencia a persistir desde los datos de la sesión.
+ *
+ * Existe para que los DOS caminos que crean tickets desde una sesión —la
+ * confirmación del reporte y la del dedup— guarden la MISMA forma. Antes uno
+ * incluía `tipo` y omitía `ubicacion` y el otro al revés, así que el dataset de
+ * G16 quedaba con registros heterogéneos según por dónde entró el reporte.
+ */
+function sugerenciaDeSesion(inputs: NonNullable<SessionState['pendingTicketInputs']>) {
+  return {
+    sugerido: {
+      titulo: inputs.classifiedTitulo,
+      descripcion_normalizada: inputs.classifiedDescripcion,
+      tipo: inputs.classifiedTipo,
+      categoria: inputs.classifiedCategoria,
+      origen: inputs.classifiedOrigen,
+      urgencia: inputs.classifiedUrgencia,
+      ...(inputs.classifiedUbicacion !== undefined && { ubicacion: inputs.classifiedUbicacion }),
+    },
+    confianza: inputs.classifiedConfianza,
+    modelo: inputs.classifiedModelo,
+    promptVersion: inputs.classifiedPromptVersion,
+    ...(inputs.classifiedUso ? { uso: inputs.classifiedUso } : {}),
+  };
+}
+
+/**
+ * Resumen estructurado que el residente confirma (RF-B06 / P1 nodo N).
+ * Se muestran los campos que la IA decidió, en lenguaje llano: si se equivocó,
+ * la persona lo ve antes de que el ticket exista.
+ */
+function resumenDeReporte(c: {
+  titulo: string;
+  categoria: string;
+  urgencia: string;
+  origen: string;
+  tipo: string;
+}): string {
+  const urgencia: Record<string, string> = {
+    CRITICA: 'crítica (riesgo para personas)',
+    ALTA: 'alta (servicio esencial afectado)',
+    MEDIA: 'media',
+    BAJA: 'baja',
+  };
+  const donde = c.origen === 'ESPACIO_COMUN' ? 'espacio común' : 'unidad';
+  const que = c.tipo === 'CONDUCTA' ? 'Convivencia' : 'Infraestructura';
+  return [
+    'Antes de registrarlo, ¿está bien así?',
+    '',
+    `📝 ${c.titulo}`,
+    `• Tipo: ${que}`,
+    `• Categoría: ${c.categoria}`,
+    `• Dónde: ${donde}`,
+    `• Urgencia: ${urgencia[c.urgencia] ?? c.urgencia}`,
+    '',
+    'Respondé *Sí* para registrarlo o *No* para contármelo de nuevo.',
+  ].join('\n');
 }
 
 void sql;

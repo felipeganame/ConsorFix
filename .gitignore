@@ -41,9 +41,14 @@ coverage/
 android/build/
 ios/build/
 
-# Storage
-storage/
-uploads/
+# Storage local de archivos subidos en dev.
+# Anclados a la raíz con '/': sin el slash inicial, git aplica el patrón a
+# CUALQUIER directorio con ese nombre a cualquier profundidad, y se comía
+# `apps/api/src/storage/` — el módulo del servicio de S3 nunca entró al repo y
+# el CI falló con "Cannot find module". Es el mismo error que tenía el patrón de
+# .claude-flow/data/.
+/storage/
+/uploads/
 
 # Ruflo runtime
 # Con `**/` para que aplique también en apps/* y packages/*: un patrón con

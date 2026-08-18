@@ -13,6 +13,12 @@ export const residente = pgTable(
     /** Chat de Telegram vinculado (migración 0005). Único en todo el sistema. */
     telegramChatId: text('telegram_chat_id'),
     telegramVinculadoAt: timestamp('telegram_vinculado_at', { withTimezone: true }),
+    /**
+     * Último mensaje entrante del residente. Define la ventana de 24 h de
+     * WhatsApp (RF-G02): dentro se puede mandar texto libre, fuera hace falta
+     * una plantilla aprobada.
+     */
+    ultimoInboundAt: timestamp('ultimo_inbound_at', { withTimezone: true }),
     passwordHash: text('password_hash'),
     activo: boolean('activo').notNull().default(true),
     pushToken: text('push_token'),

@@ -16,7 +16,7 @@
 | RF-A04 | El administrador puede dar de alta residentes (propietario/inquilino) asociándolos a una o más unidades, con su teléfono en formato E.164. | M | Un mismo teléfono puede estar vinculado a unidades en distintos consorcios (G6). El vínculo distingue rol propietario/inquilino por unidad. |
 | RF-A05 | El administrador puede importar residentes masivamente desde Excel/CSV con validación y reporte de errores fila por fila. | M | Archivo con errores parciales: filas válidas se importan, inválidas se reportan con motivo. |
 | RF-A06 | Un teléfono no registrado que escribe al bot recibe un mensaje explicando cómo sumarse (contactar a su administración). | M | Ningún flujo de reporte disponible para no registrados (G6). |
-| RF-A07 | El sistema registra para cada unidad quién es el propietario aun cuando el ocupante sea un inquilino. | M | Necesario para la derivación (RF-D03). |
+| RF-A07 | El sistema registra para cada unidad quién es el propietario aun cuando el ocupante sea un inquilino. | M | Su propósito original era la derivación (RF-D03, superado). Hoy sostiene el alta de inquilinos por el propietario. |
 
 ### Módulo B — Captura por WhatsApp (bot)
 
@@ -51,11 +51,11 @@
 |---|---|---|---|
 | RF-D01 | Bandeja centralizada de tickets filtrable por consorcio, estado, categoría, urgencia y origen, ordenada por prioridad (urgencia + votos). | M | Un admin multi-consorcio ve todo su tenant y puede filtrar por consorcio. |
 | RF-D02 | El administrador valida cada ticket nuevo: confirma o corrige la clasificación de la IA y decide el camino (validar / derivar / rechazar / marcar duplicado). | M | Estados según máquina de estados (G13). Toda transición queda en un historial auditable con autor y timestamp. |
-| RF-D03 | Derivación al propietario: si el problema es interno de la unidad, el ticket pasa a `DERIVADO`, se notifica al propietario de esa unidad y sale de la bandeja activa. | M | Si el reportante es inquilino, la notificación va al propietario (RF-A07, G7). Auto-archivo a N días configurable. |
-| RF-D04 | Asignación de técnico a un ticket validado, con notificación al técnico (WhatsApp saliente / email) incluyendo detalle y fotos. | M | Técnico como registro del tenant, no usuario con login (G8). |
+| ~~RF-D03~~ | ~~Derivación al propietario: el ticket pasa a `DERIVADO`.~~ **SUPERADO por [ADR-002](adr/ADR-002-ciclo-de-vida-del-ticket.md)**: no existe el estado `DERIVADO`. La visibilidad por unidad cubre el caso (solo los ocupantes ven el ticket de su unidad). | ~~M~~ | Si el reportante es inquilino, la notificación va al propietario (RF-A07, G7). Auto-archivo a N días configurable. |
+| ~~RF-D04~~ | ~~Asignación de técnico a un ticket validado.~~ **SUPERADO por [ADR-002](adr/ADR-002-ciclo-de-vida-del-ticket.md)**: el técnico está fuera del sistema por diseño. El admin lo contacta por afuera y registra el costo. | ~~M~~ | Técnico como registro del tenant, no usuario con login (G8). |
 | RF-D05 | Registro de presupuestos y costos por ticket (monto, proveedor, comprobante adjunto, estado borrador/confirmado). | M | Costo confirmado de ticket común → visible a los residentes del consorcio (G10). |
 | RF-D06 | Resolución y cierre: el admin marca `RESUELTO` (con nota/foto opcional); el cierre definitivo ocurre tras notificar al reportante y votantes. | M | Reabrir un ticket cerrado crea trazabilidad (motivo de reapertura). |
-| RF-D07 | ABM de técnicos del tenant (nombre, rubro, contacto). | M | — |
+| ~~RF-D07~~ | ~~ABM de técnicos del tenant.~~ **SUPERADO por [ADR-002](adr/ADR-002-ciclo-de-vida-del-ticket.md)**: no hay tabla `tecnico`. | ~~M~~ | — |
 | RF-D08 | Tablero simple de métricas: tickets por estado, tiempo medio de resolución, costo acumulado por consorcio/período. | S | Las métricas de negocio del Ante Proyecto (observabilidad). |
 
 ### Módulo E — App móvil del residente
@@ -69,6 +69,8 @@
 | RF-E05 | **Modo offline:** los reportes creados sin señal se encolan localmente y se sincronizan al recuperar conectividad, sin duplicarse. | M | Idempotencia por `client_generated_id`; indicador visual de "pendiente de sincronizar" (G5, G15). Probado en subsuelo/modo avión. |
 | RF-E06 | Detalle de ticket con línea de tiempo de estados y costos visibles según reglas. | M | — |
 | RF-E07 | Notificaciones push de cambios de estado en tickets propios o votados. | S | Complemento del canal WhatsApp (G9). |
+
+> **Sobre RF-D03, RF-D04 y RF-D07:** quedaron superados por la decisión del 2026-06-12, registrada en [ADR-002](adr/ADR-002-ciclo-de-vida-del-ticket.md). El ciclo de vida real del ticket es de cuatro estados —`REGISTRADO → VALIDADO → SOLUCIONADO`, más `DESCARTADO`— y está implementado en `packages/domain/src/ticket/transitions.ts` con cobertura del 100 %. Se dejan tachados en vez de borrados para que quede trazable qué se decidió no hacer y por qué.
 
 ### Módulo F — Conductas y convivencia
 

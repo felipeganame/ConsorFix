@@ -87,32 +87,44 @@ flowchart TD
 
 ## P2 — Ciclo de vida del ticket (máquina de estados)
 
-**Lanes:** Sistema · Administrador · Técnico (externo) · Residente
+> **Actualizado el 2026-08-18.** La máquina de nueve estados que describía esta sección quedó superada por la decisión del 2026-06-12, registrada en [ADR-002](adr/ADR-002-ciclo-de-vida-del-ticket.md). El diagrama original se conserva más abajo, tachado, porque el Ante Proyecto lo cita y conviene que sea trazable qué se cambió y por qué.
+
+**Lanes:** Sistema · Administrador · Residente *(el técnico está fuera del sistema — ver ADR-002)*
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NUEVO : reporte recibido
-    NUEVO --> EN_TRIAJE : pipeline IA procesando
-    EN_TRIAJE --> PENDIENTE_VALIDACION : clasificación adjunta
-    PENDIENTE_VALIDACION --> VALIDADO : admin confirma (común)
-    PENDIENTE_VALIDACION --> DERIVADO : admin deriva (unidad privada) → P3
-    PENDIENTE_VALIDACION --> RECHAZADO : admin rechaza con motivo
-    PENDIENTE_VALIDACION --> DUPLICADO : admin marca duplicado → merge votos
-    VALIDADO --> ASIGNADO : admin asigna técnico (RF-D04)
-    ASIGNADO --> EN_REPARACION : técnico inicia trabajo
-    EN_REPARACION --> RESUELTO : admin registra resolución y costo (RF-D05/D06)
-    RESUELTO --> CERRADO : notificado reportante y votantes
-    DERIVADO --> CERRADO : propietario resuelve o auto-archivo a N días
-    CERRADO --> PENDIENTE_VALIDACION : reapertura con motivo (RF-D06)
-    RECHAZADO --> [*]
-    DUPLICADO --> [*]
-    CERRADO --> [*]
+    [*] --> REGISTRADO : reporte recibido (bot, app o carga manual del admin)
+    REGISTRADO --> VALIDADO : el admin confirma origen y, en conducta, la unidad acusada
+    REGISTRADO --> DESCARTADO : el admin descarta (no aplica)
+    VALIDADO --> SOLUCIONADO : el admin registra la resolución y el costo (RF-D05/D06)
+    VALIDADO --> DESCARTADO : el admin descarta
+    DESCARTADO --> [*]
+    SOLUCIONADO --> [*]
 ```
 
 **Invariantes:**
-- Toda transición registra autor, timestamp y nota → historial auditable (RF-D02, RF-H05).
-- Solo el ADMIN ejecuta transiciones (el técnico no tiene login en MVP, G8).
+- Las transiciones SOLO pasan por `packages/domain/src/ticket/transitions.ts` (regla 2 de CLAUDE.md). Hay un único `update` de `estado` en todo el código y está precedido por `assertTransition`.
+- Toda transición registra autor, timestamp y nota → historial auditable en `ticket_evento`, consultable en `GET /tickets/:id/historial` (RF-D02, RF-H05).
+- Solo el ADMIN ejecuta transiciones.
+- `VALIDADO` exige que el admin confirme el `origen`, porque de eso depende la visibilidad. En un ticket de CONDUCTA exige además la `unidad_reportada_id` (RF-F01), respaldado por un CHECK en la base.
+- **No hay reapertura.** Si el problema reaparece se crea un ticket nuevo: dos ocurrencias del mismo caño roto son dos incidencias, y así el tiempo de resolución de cada una se mide sin contaminar.
 - Cada transición relevante dispara una notificación (P-S3, RF-G01).
+
+### Diagrama original (superado — se conserva por trazabilidad)
+
+<details>
+<summary>Máquina de nueve estados del Ante Proyecto</summary>
+
+Superada por ADR-002. Los estados `ASIGNADO` y `EN_REPARACION` presuponían que el técnico usa el sistema, y no lo usa: el admin lo contacta por afuera. Modelar estados que nadie transiciona producía tickets colgados para siempre esperando a un actor inexistente.
+
+```
+[*] --> NUEVO --> EN_TRIAJE --> PENDIENTE_VALIDACION
+PENDIENTE_VALIDACION --> (VALIDADO | DERIVADO | RECHAZADO | DUPLICADO)
+VALIDADO --> ASIGNADO --> EN_REPARACION --> RESUELTO --> CERRADO
+CERRADO --> PENDIENTE_VALIDACION  (reapertura)
+```
+
+</details>
 
 ---
 
