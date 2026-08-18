@@ -37,7 +37,7 @@ export class CategoriasController {
     return withTenant(tid, async (tx) => {
       // El consorcio tiene que ser del tenant: RLS no valida el destino de la FK.
       if (dto.consorcio_id) {
-        await assertMismoTenant(tx, tid, consorcio as never, dto.consorcio_id, 'consorcio');
+        await assertMismoTenant(tx, tid, { columnaId: consorcio.id, columnaTenant: consorcio.tenantId, nombre: 'consorcio' }, dto.consorcio_id);
       }
       return (
         await tx

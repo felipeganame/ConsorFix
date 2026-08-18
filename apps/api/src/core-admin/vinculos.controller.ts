@@ -41,8 +41,8 @@ export class VinculosController {
     return withTenant(tid, async (tx) => {
       // Los DOS extremos tienen que ser del tenant. Sin esto se podía vincular
       // un residente ajeno a una unidad ajena, y el listado exponía los ids.
-      await assertMismoTenant(tx, tid, residente as never, dto.residente_id, 'residente');
-      await assertMismoTenant(tx, tid, unidad as never, dto.unidad_id, 'unidad');
+      await assertMismoTenant(tx, tid, { columnaId: residente.id, columnaTenant: residente.tenantId, nombre: 'residente' }, dto.residente_id);
+      await assertMismoTenant(tx, tid, { columnaId: unidad.id, columnaTenant: unidad.tenantId, nombre: 'unidad' }, dto.unidad_id);
       return (
         await tx
           .insert(vinculoResidente)

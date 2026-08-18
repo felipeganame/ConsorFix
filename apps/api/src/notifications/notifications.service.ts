@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { TicketState } from '@consorciofix/domain';
 import type { E164Phone } from '@consorciofix/contracts';
 import { createWhatsAppProvider } from '@consorciofix/messaging';
@@ -67,6 +67,20 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const ahora = new Date();
     const maxIntentos = NotificationsService.BACKOFF_MIN.length;
 
+    // Barrido de arrastre: si el proceso murió entre el claim del último intento
+    // y su resultado, la fila quedó PENDIENTE con los intentos agotados. El
+    // predicado del claim la excluye para siempre, así que sin esto desaparecía
+    // en silencio, sin reintentarse ni contarse como abandonada.
+    await systemDb
+      .update(notificacion)
+      .set({ estado: 'FALLIDA', error: 'agotados los reintentos' })
+      .where(
+        and(
+          eq(notificacion.estado, 'PENDIENTE'),
+          gte(notificacion.intentos, maxIntentos),
+        ),
+      );
+
     // Claim ATÓMICO con FOR UPDATE SKIP LOCKED. Con un SELECT plano, dos
     // procesos de API —y `onModuleInit` arranca un reaper en CADA uno— tomaban
     // la misma fila en la misma ventana y la notificación salía duplicada.
@@ -78,7 +92,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
          WHERE estado IN ('PENDIENTE', 'FALLIDA')
            AND (proximo_intento_at IS NULL OR proximo_intento_at <= ${ahora})
            AND intentos < ${maxIntentos}
-         ORDER BY proximo_intento_at ASC NULLS FIRST, created_at ASC
+         ORDER BY created_at ASC, proximo_intento_at ASC NULLS FIRST
          LIMIT ${limite}
          FOR UPDATE SKIP LOCKED
       )
@@ -132,7 +146,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       if (!dest) {
         await systemDb
           .update(notificacion)
-          .set({ estado: 'FALLIDA', error: 'destinatario inexistente', proximoIntentoAt: null })
+          .set({ estado: 'FALLIDA', error: 'destinatario inexistente', intentos: maxIntentos })
           .where(eq(notificacion.id, n.id));
         abandonadas++;
         continue;
@@ -153,7 +167,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       if (!tk) {
         await systemDb
           .update(notificacion)
-          .set({ estado: 'FALLIDA', error: 'ticket inexistente', proximoIntentoAt: null })
+          .set({ estado: 'FALLIDA', error: 'ticket inexistente', intentos: maxIntentos })
           .where(eq(notificacion.id, n.id));
         abandonadas++;
         continue;
@@ -161,7 +175,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
       const estado = tk.estado as TicketState;
       const tpl = pickTemplate(estado);
-      const legible = tk.shortCode ?? `#${tk.id.slice(0, 8)}`;
+      // SIN '#': las plantillas y sendPush ya lo agregan. Con el numeral acá
+      // salía "Tu reporte ##a1b2c3d4". Y no era un borde: `ticket.short_code`
+      // no lo escribe NADIE —la columna existe y ningún insert la setea— así
+      // que el fallback se toma siempre.
+      const legible = tk.shortCode ?? tk.id.slice(0, 8);
       const texto = tpl
         ? tpl.body({ short: legible, nota: '' })
         : `Actualización de tu reporte ${legible}.`;
@@ -173,19 +191,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       } else {
         await systemDb
           .update(notificacion)
-          .set({ estado: 'FALLIDA', error: 'sin canal disponible', proximoIntentoAt: null })
+          .set({ estado: 'FALLIDA', error: 'sin canal disponible', intentos: maxIntentos })
           .where(eq(notificacion.id, n.id));
         abandonadas++;
         continue;
       }
 
-      // Agotó los reintentos: se marca y se saca de la cola para siempre.
-      if (n.intentos >= maxIntentos) {
-        await systemDb
-          .update(notificacion)
-          .set({ proximoIntentoAt: null })
-          .where(and(eq(notificacion.id, n.id), eq(notificacion.estado, 'FALLIDA')));
-      }
       reintentadas++;
     }
 

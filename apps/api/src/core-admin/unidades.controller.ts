@@ -40,7 +40,7 @@ export class UnidadesController {
     const tid = tenantIdFromReq(req);
     return withTenant(tid, async (tx) => {
       // El consorcio tiene que ser del tenant: RLS no valida el destino de la FK.
-      await assertMismoTenant(tx, tid, consorcio as never, dto.consorcio_id, 'consorcio');
+      await assertMismoTenant(tx, tid, { columnaId: consorcio.id, columnaTenant: consorcio.tenantId, nombre: 'consorcio' }, dto.consorcio_id);
       return (
         await tx
           .insert(unidad)
@@ -55,7 +55,7 @@ export class UnidadesController {
     const dto = BulkBody.parse(body);
     const tid = tenantIdFromReq(req);
     return withTenant(tid, async (tx) => {
-      await assertMismoTenant(tx, tid, consorcio as never, dto.consorcio_id, 'consorcio');
+      await assertMismoTenant(tx, tid, { columnaId: consorcio.id, columnaTenant: consorcio.tenantId, nombre: 'consorcio' }, dto.consorcio_id);
       return tx
         .insert(unidad)
         .values(dto.etiquetas.map((e) => ({ tenantId: tid, consorcioId: dto.consorcio_id, etiqueta: e })))

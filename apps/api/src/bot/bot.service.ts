@@ -52,6 +52,15 @@ import {
  * Implements RF-B01..B03, B05 (mock), B06, B07. Audio (B04) llega con
  * la integración real de Whisper.
  */
+/** Referencia a un adjunto ya subido al storage, sin ticket asociado (RF-B09). */
+interface MediaSubida {
+  tipo: 'FOTO' | 'AUDIO';
+  storageUrl: string;
+  proveedorId: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 /** Bytes de un adjunto que todavía no tiene ticket al que asociarse (RF-B09). */
 interface MediaPendiente {
   tipo: 'FOTO' | 'AUDIO';
@@ -138,6 +147,7 @@ export class BotService {
   private async continuar(
     inbound: InboundMessage,
     resi: { id: string; tenantId: string },
+    mediaYaSubida?: MediaSubida,
   ): Promise<{ status: string; ticketId?: string }> {
 
     // Comandos (RF-B10). Va ANTES de la sesión y del pipeline de reporte:
@@ -247,7 +257,15 @@ export class BotService {
     }
 
     const choice = consorcios[0]!;
-    return this.classifyDedupCreate(inbound, resi, choice.consorcioId, choice.unidadId, text, mediaPendiente);
+    return this.classifyDedupCreate(
+      inbound,
+      resi,
+      choice.consorcioId,
+      choice.unidadId,
+      text,
+      mediaPendiente,
+      mediaYaSubida,
+    );
   }
 
   private async handleConsorcioChoice(
@@ -334,6 +352,7 @@ export class BotService {
     unidadId: string | null,
     text: string,
     mediaPendiente: MediaPendiente | null = null,
+    mediaYaSubida?: MediaSubida,
   ): Promise<{ status: string; ticketId: string }> {
     let classified;
     try {
@@ -404,7 +423,7 @@ export class BotService {
       // proveedor expiran en minutos y el ticket se crea en otro request, así
       // que si se esperara a la confirmación los bytes ya no existirían. En la
       // sesión viaja solo la referencia, no los megabytes.
-      const subida = await this.subirMedia(resi.tenantId, mediaPendiente);
+      const subida = mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente));
       await upsertSession(inbound.from, {
         step: 'confirm_reporte',
         pendingTicketInputs: {
@@ -454,7 +473,11 @@ export class BotService {
         ...(classified.uso ? { uso: classified.uso } : {}),
       },
     });
-    await this.asociarMediaSubida(resi.tenantId, t.id, await this.subirMedia(resi.tenantId, mediaPendiente));
+    await this.asociarMediaSubida(
+      resi.tenantId,
+      t.id,
+      mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente)),
+    );
     await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
@@ -731,8 +754,11 @@ export class BotService {
       await this.markWebhookProcessed(inbound.wamid);
       if (inbound.kind === 'text' && raw.length > 0) {
         await this.reply(inbound.from, 'Ok, tomo esto como la versión corregida.', inbound);
-        // Se reprocesa como reporte nuevo, ya sin sesión.
-        return this.continuar(inbound, resi);
+        // Se reprocesa como reporte nuevo, ya sin sesión, ARRASTRANDO la media
+        // que ya estaba subida: el residente mandó la foto y después corrigió el
+        // texto, y perderla acá sería perder exactamente la evidencia que
+        // RF-B09 existe para conservar.
+        return this.continuar(inbound, resi, inputs.mediaSubida);
       }
       await this.reply(
         inbound.from,
@@ -809,10 +835,7 @@ export class BotService {
   private async subirMedia(
     tenantId: string,
     pendiente: MediaPendiente | null,
-  ): Promise<
-    | { tipo: 'FOTO' | 'AUDIO'; storageUrl: string; proveedorId: string; mimeType: string; sizeBytes: number }
-    | undefined
-  > {
+  ): Promise<MediaSubida | undefined> {
     if (!pendiente) return undefined;
     try {
       const subido = await this.storage.subir(
@@ -839,9 +862,7 @@ export class BotService {
   private async asociarMediaSubida(
     tenantId: string,
     ticketId: string,
-    subida:
-      | { tipo: 'FOTO' | 'AUDIO'; storageUrl: string; proveedorId: string; mimeType: string; sizeBytes: number }
-      | undefined,
+    subida: MediaSubida | undefined,
   ): Promise<void> {
     if (!subida) return;
     try {

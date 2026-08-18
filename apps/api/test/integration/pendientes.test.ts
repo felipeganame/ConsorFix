@@ -318,10 +318,12 @@ describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
       await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id))
     )[0]!;
     expect(post.intentos).toBe(1);
-    // El mock de WhatsApp responde bien, así que el reintento tiene éxito y la
-    // fila sale de la cola. Eso es el comportamiento correcto: el reaper existe
-    // para recuperar lo colgado, no para reintentar indefinidamente.
-    expect(post.estado).toBe('ENVIADA');
+    // NO se afirma el resultado del envío: depende de que el mock de WhatsApp
+    // esté levantado, y en CI no lo está. Este test es sobre el CONTADOR y la
+    // salida de la cola, no sobre el proveedor. Afirmar 'ENVIADA' lo hacía pasar
+    // en local y fallar en CI por un motivo que no tiene nada que ver con el
+    // comportamiento bajo prueba.
+    expect(post.estado).not.toBe('PENDIENTE');
 
     // Ahora el contador. El bug era que el catch del envío hacía `intentos: 1`
     // LITERAL, reseteando lo que el reaper acababa de incrementar: la fila
@@ -330,7 +332,7 @@ describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
     // y haciéndola elegible: el contador tiene que subir, no volver a 1.
     await systemDb
       .update(notificacion)
-      .set({ estado: 'FALLIDA', proximoIntentoAt: new Date(Date.now() - 1000) })
+      .set({ estado: 'FALLIDA', intentos: 1, proximoIntentoAt: new Date(Date.now() - 1000) })
       .where(eq(notificacion.id, n.id));
     await svc.reintentarPendientes(10);
     const post2 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
@@ -342,6 +344,19 @@ describe('RF-G01/G02 — notificaciones durables y ventana de 24 h', () => {
     const post3 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
     expect(post3.intentos).toBe(2);
     expect(r3.reintentadas).toBe(0);
+
+    // Y una fila con los intentos agotados NO se reencola. Antes las ramas de
+    // abandono ponían proximo_intento_at = NULL, que el claim lee como "vencida
+    // hace infinito" y el NULLS FIRST ponía PRIMERA: se reclamaba en cada pasada
+    // hasta agotar el contador, pisando el cupo de las notificaciones nuevas.
+    await systemDb
+      .update(notificacion)
+      .set({ estado: 'FALLIDA', intentos: 5, proximoIntentoAt: null })
+      .where(eq(notificacion.id, n.id));
+    const r4 = await svc.reintentarPendientes(10);
+    expect(r4.reintentadas).toBe(0);
+    const post4 = (await systemDb.select().from(notificacion).where(eq(notificacion.id, n.id)))[0]!;
+    expect(post4.intentos).toBe(5);
 
     svc.onModuleDestroy();
   });
