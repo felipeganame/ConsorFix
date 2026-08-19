@@ -21,6 +21,12 @@ const DEMO = import.meta.env.DEV
     ]
   : [];
 
+/**
+ * Rutas que solo puede usar el SUPER_ADMIN. Si el login viene con un `from` que
+ * apunta a una de ellas y quien entra no lo es, se lo lleva al inicio.
+ */
+const SOLO_SUPER_ADMIN = ['/administraciones'];
+
 export function LoginPage(): JSX.Element {
   const { setSession } = useAuth();
   const nav = useNavigate();
@@ -39,8 +45,15 @@ export function LoginPage(): JSX.Element {
       const r = await login(email.trim(), password);
       setToken(r.accessToken);
       setSession(r.user);
+      // `from` es la ruta a la que el usuario quería entrar antes de que el
+      // guard lo mandara al login. Restaurarla es correcto cuando se vence la
+      // sesión y la persona vuelve a entrar, pero **cruza identidades**: si
+      // venías de /administraciones como super admin y ahora entrás como
+      // administradora, te devolvía a una página que tu rol no puede usar y lo
+      // primero que veías era el cartel rojo de "esta sección no te corresponde".
       const from = (loc.state as { from?: string } | null)?.from ?? '/';
-      nav(from, { replace: true });
+      const permitida = !SOLO_SUPER_ADMIN.some((ruta) => from.startsWith(ruta)) || r.user.kind === 'SUPER_ADMIN';
+      nav(permitida ? from : '/', { replace: true });
     } catch (err) {
       setError((err as Error).message || 'No se pudo iniciar sesión');
     } finally {
