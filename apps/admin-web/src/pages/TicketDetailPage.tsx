@@ -5,6 +5,7 @@ import { Topbar } from '../components/Shell.js';
 import {
   createGasto,
   createRegistroConducta,
+  getConsorcio,
   getHistorial,
   historialConducta,
   getTicket,
@@ -15,6 +16,7 @@ import {
   totalGastos,
   transitionTicket,
   type Categoria,
+  type Consorcio,
   type EventoConvivencia,
   type RegistroConducta,
   type ResultadoConducta,
@@ -63,6 +65,9 @@ export function TicketDetailPage(): JSX.Element {
   const [totales, setTotales] = useState<Array<{ moneda: string; total: number }>>([]);
   const [historial, setHistorial] = useState<HistorialEvento[]>([]);
   const [unidades, setUnidades] = useState<Unidad[]>([]);
+  // El nombre del consorcio: Metadatos mostraba el UUID recortado, que no le
+  // dice nada a nadie. La unidad ya se resolvía a su etiqueta.
+  const [cons, setCons] = useState<Consorcio | null>(null);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -136,13 +141,15 @@ export function TicketDetailPage(): JSX.Element {
     let vigente = true;
     void (async () => {
       try {
-        const [us, cs] = await Promise.all([
+        const [us, cs, c] = await Promise.all([
           listUnidades(ticket.consorcioId),
           listCategorias(ticket.consorcioId),
+          getConsorcio(ticket.consorcioId),
         ]);
         if (!vigente) return;
         setUnidades(us);
         setCategorias(cs);
+        setCons(c);
       } catch {
         // No es fatal: la validación de infraestructura funciona igual. El
         // selector de conducta avisa por su cuenta si la lista quedó vacía.
@@ -161,8 +168,15 @@ export function TicketDetailPage(): JSX.Element {
     setError(null);
     try {
       const payload: Parameters<typeof transitionTicket>[1] = { to, ...(body as object) } as Parameters<typeof transitionTicket>[1];
-      const next = await transitionTicket(ticket.id, payload);
-      setTicket(next);
+      await transitionTicket(ticket.id, payload);
+      // Se recarga en vez de usar la respuesta de la transición: ese endpoint
+      // devuelve la fila del ticket sin `clasificacion` —la sugerencia de la IA
+      // la agrega solo `GET /tickets/:id`—, así que pisar el estado con ella
+      // dejaba el panel de IA en blanco ("sin clasificar") hasta recargar la
+      // página, justo después de la acción que la corrige. Y de paso el
+      // historial gana una fila en cada transición, así que también estaba
+      // quedando viejo.
+      await refresh();
       setShowValidar(false);
       setNota('');
     } catch (e) {
@@ -740,7 +754,7 @@ export function TicketDetailPage(): JSX.Element {
               <div className="uppercase">Metadatos</div>
               <dl className="meta-list mt-3">
                 <dt>Consorcio</dt>
-                <dd className="mono small">{ticket.consorcioId.slice(0, 8)}</dd>
+                <dd className="small">{cons?.nombre ?? <span className="mono">{ticket.consorcioId.slice(0, 8)}</span>}</dd>
                 <dt>Unidad</dt>
                 <dd className="small">{etiquetaDe(ticket.unidadId)}</dd>
                 <dt>Visibilidad</dt>

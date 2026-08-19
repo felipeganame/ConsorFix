@@ -182,6 +182,10 @@ export function createConsorcio(body: {
   return apiFetch<Consorcio>('/consorcios', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function getConsorcio(id: string): Promise<Consorcio> {
+  return apiFetch<Consorcio>(`/consorcios/${id}`);
+}
+
 /**
  * Editar o archivar un consorcio. Archivar es un soft-delete: la fila se
  * conserva porque los tickets viejos y su historial la referencian.
