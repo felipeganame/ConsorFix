@@ -125,19 +125,36 @@
 
 Verificado ejecutando, no leyendo. Lo que sigue vale más que las tildes de las tablas de arriba.
 
+Actualizado el 2026-08-18, después de probar la lógica completa en runtime (PR #39).
+
 | Fase | Estado | Qué falta concretamente |
 |---|---|---|
 | 0 — Fundaciones | ✅ | Branch protection en `main` (tarea 0.3) nunca se configuró |
 | 1 — Dominio, RBAC, tickets | ✅ | Nada de alcance vigente. RF-D03/D04/D07 superados por ADR-002 |
-| 2 — WhatsApp texto | 🟡 | Falta el paso de resumen+confirmación (RF-B06), la ventana de 24 h y las plantillas HSM versionadas (RF-G02). Las notificaciones salen fire-and-forget, sin cola |
-| 3 — IA real | 🟡 | **Solo falta poner la API key.** Dataset de 302 casos, `ai:eval` con umbrales y persistencia de sugerencias listos. Quedan el panel de baja confianza (3.7) y la telemetría de costo (3.8) |
-| 4 — App móvil | 🟡 | Push notifications (`expo-notifications` no está ni en dependencias) y E2E Maestro. La app tampoco muestra `costosConfirmados` |
+| 2 — WhatsApp texto | ✅ | RF-B06 (resumen + confirmación) cerrado. Notificaciones con cola durable, backoff y reaper; la ventana de 24 h se calcula con `residente.ultimo_inbound_at` |
+| 3 — IA real | 🟡 | **Solo falta poner la API key.** Dataset de 302 casos, `ai:eval` con umbrales y persistencia de sugerencias listos. La telemetría de costo (3.8) ya se muestra en Resumen y en el detalle del ticket. Queda una bandeja dedicada de baja confianza (3.7): hoy la confianza real se ve por ticket, pero no hay cola de revisión filtrada |
+| 4 — App móvil | 🟡 | Push notifications (`expo-notifications` no está ni en dependencias) y E2E Maestro. `costosConfirmados` ya se muestra en el feed y en el detalle |
 | 5 — Conductas y costos | ✅ | Nada. RF-F01 cerrado con la opción A |
 | 6 — Hardening | ❌ | Sin arrancar, salvo el gate de cobertura y el upgrade de drizzle que ya se hicieron |
 
 **Canales de bot:** además de WhatsApp hay Telegram, los dos detrás de `IMessagingProvider`. Telegram no necesita verificación de Meta Business ni plantillas aprobadas, así que conviene para desarrollar.
 
-**Lo que más conviene atacar ahora**, en orden: la key de IA y su corrida de `ai:eval` (desbloquea el capítulo de validación), la cobertura de `bot` (10 %) y `webhooks` (16 %), y la cola de notificaciones.
+**Deuda abierta que rompe una regla no negociable:** `sesion_bot` tiene `tenant_id`
+y `consorcio_ctx_id` pero **no tiene RLS activado ni política** (verificado con
+`pg_class.relrowsecurity`), contra la regla 1 de CLAUDE.md. Su `estado_flujo`
+guarda el texto pendiente del reporte y las opciones de consorcio, así que es dato
+de tenant. `webhook_event` tampoco tiene RLS, pero ahí es correcto: guarda el
+payload crudo del proveedor *antes* de saber a qué tenant corresponde. Falta la
+política de `sesion_bot` y su test en `test:isolation`.
+
+**Cobertura medida el 2026-08-18** (integración, por módulo): global 72,5 %.
+`webhooks` 14 % es el más bajo con diferencia — la firma HMAC y el parseo de
+payloads casi no se ejercitan por HTTP. Después `notifications` 62 % y
+`core-admin` 63 %. `bot` subió de 10 % a 66,6 % con la suite `bot-flujo`.
+
+**Lo que más conviene atacar ahora**, en orden: la key de IA y su corrida de
+`ai:eval` (desbloquea el capítulo de validación), la política RLS de `sesion_bot`,
+y la cobertura de `webhooks`.
 
 ---
 

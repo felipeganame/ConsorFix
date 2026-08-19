@@ -69,8 +69,9 @@ export function createEmbedder(): IEmbedder {
       return new MockEmbedder();
     }
     case 'mock':
-    default:
       return new MockEmbedder();
+    default:
+      return warnProveedorNoSoportado('embedder', provider, ['openai', 'mock'], new MockEmbedder());
   }
 }
 
@@ -83,8 +84,9 @@ export function createTranscriber(): ITranscriber {
       return new OpenAITranscriber(key);
     }
     case 'mock':
-    default:
       return new MockTranscriber();
+    default:
+      return warnProveedorNoSoportado('transcriber', provider, ['openai', 'mock'], new MockTranscriber());
   }
 }
 
@@ -110,5 +112,29 @@ export function createVision(): IImageVision {
 function warnFallback<T>(missingEnv: string, fallback: T): T {
   // eslint-disable-next-line no-console
   console.warn(`[ai] ${missingEnv} missing — falling back to mock`);
+  return fallback;
+}
+
+/**
+ * Avisa cuando el proveedor configurado NO existe para esta pieza del pipeline.
+ *
+ * Es el caso de `AI_PROVIDER=anthropic`: Anthropic no tiene API de embeddings ni
+ * de transcripción, así que el embedder y el transcriber caían al `default` y
+ * devolvían el mock **sin decir nada**. Se veía el clasificador contestando de
+ * verdad y era razonable concluir que todo el pipeline era real, mientras el
+ * dedup comparaba vectores falsos y los audios traían texto inventado. Para una
+ * tesis eso es peor que un error: es una medición que parece válida.
+ */
+function warnProveedorNoSoportado<T>(
+  pieza: string,
+  provider: string,
+  soportados: readonly string[],
+  fallback: T,
+): T {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[ai] ${pieza}: el proveedor "${provider}" no está soportado (solo ${soportados.join(', ')}) — ` +
+      `usando mock. Configurá AI_${pieza.toUpperCase()}_PROVIDER aparte si querés uno real.`,
+  );
   return fallback;
 }
