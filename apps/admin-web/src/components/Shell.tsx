@@ -1,8 +1,12 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  EVENTO_CONSORCIO_ACTIVO,
   EVENTO_CONSORCIOS,
+  getConsorcioActivo,
   getTenantOverride,
+  limpiarConsorcioActivo,
+  setConsorcioActivo,
   listConsorcios,
   listTenants,
   setTenantOverride,
@@ -81,6 +85,31 @@ export function Shell(_props: ShellProps): JSX.Element {
     return () => window.removeEventListener(EVENTO_CONSORCIOS, cargar);
   }, [esSuper, tenantElegido]);
 
+  /**
+   * Consorcio activo. Lo comparten la Bandeja, el Resumen y Unidades, así que
+   * elegirlo acá filtra el panel entero en vez de navegar a una pantalla.
+   */
+  const [consorcioActivo, setConsorcioActivoState] = useState<string | null>(getConsorcioActivo());
+
+  useEffect(() => {
+    const sincronizar = () => setConsorcioActivoState(getConsorcioActivo());
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+  }, []);
+
+  // Si el consorcio guardado ya no está en la lista —lo archivaron, o cambió la
+  // administración— se olvida en vez de dejar al panel filtrando por un id que
+  // no existe y mostrando vacío sin explicación.
+  useEffect(() => {
+    if (!consorcioActivo || consorcios.length === 0) return;
+    if (!consorcios.some((c) => c.id === consorcioActivo)) limpiarConsorcioActivo();
+  }, [consorcioActivo, consorcios]);
+
+  function elegirConsorcio(id: string) {
+    setSwitcherOpen(false);
+    setConsorcioActivo(id);
+  }
+
   function elegirTenant(id: string) {
     setTenantOverride(id);
     setTenantElegido(id);
@@ -101,11 +130,6 @@ export function Shell(_props: ShellProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [switcherOpen]);
 
-  function goToConsorcio(id: string) {
-    setSwitcherOpen(false);
-    nav(`/unidades?consorcio=${id}`);
-  }
-
   const initials = (user?.nombre ?? '?')
     .split(' ')
     .map((p) => p[0])
@@ -123,20 +147,22 @@ export function Shell(_props: ShellProps): JSX.Element {
   // decía uno mientras la pantalla trabajaba con el otro. Se muestra el nombre
   // solo cuando hay uno —ahí no hay ambigüedad posible— y si hay varios se dice
   // lo que el control realmente es.
+  // El super admin elige administración en este control; el admin elige consorcio.
+  // Es el mismo lugar porque en los dos casos es "en qué contexto estoy
+  // trabajando", pero el contexto que le corresponde a cada uno es distinto.
+  const nombreConsorcioActivo = consorcios.find((c) => c.id === consorcioActivo)?.nombre;
   const tituloSwitcher = esSuper
     ? (nombreTenant ?? 'Elegí administración')
     : totalConsorcios === 0
       ? 'Sin consorcios'
-      : totalConsorcios === 1
-        ? consorcios[0]!.nombre
-        : 'Mis consorcios';
+      : (nombreConsorcioActivo ?? 'Todos los consorcios');
   const subtituloSwitcher = esSuper
     ? (tenantElegido ? 'administración activa' : 'ninguna elegida')
     : totalConsorcios === 0
       ? 'agregá uno'
-      : totalConsorcios === 1
-        ? '1 consorcio'
-        : `${totalConsorcios} consorcios`;
+      : nombreConsorcioActivo
+        ? 'consorcio activo'
+        : `${totalConsorcios} en total`;
   const faltaElegirTenant = esSuper && !tenantElegido && loc.pathname !== '/administraciones';
 
   function onLogout() {
@@ -189,12 +215,27 @@ export function Shell(_props: ShellProps): JSX.Element {
               }}
             >
               {!esSuper && (
-                <div
-                  className="uppercase"
-                  style={{ padding: '4px 8px 6px', color: 'var(--cf-ink-3)', fontSize: 10.5 }}
-                >
-                  Ir a las unidades de
-                </div>
+                <>
+                  <div
+                    className="uppercase"
+                    style={{ padding: '4px 8px 6px', color: 'var(--cf-ink-3)', fontSize: 10.5 }}
+                  >
+                    Trabajar en
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{
+                      width: '100%',
+                      justifyContent: 'flex-start',
+                      marginBottom: 2,
+                      fontWeight: consorcioActivo ? 500 : 700,
+                    }}
+                    onClick={() => elegirConsorcio('')}
+                  >
+                    Todos los consorcios
+                  </button>
+                </>
               )}
               {esSuper
                 ? tenants.map((t) => (
@@ -218,8 +259,13 @@ export function Shell(_props: ShellProps): JSX.Element {
                       key={c.id}
                       type="button"
                       className="btn ghost sm"
-                      style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
-                      onClick={() => goToConsorcio(c.id)}
+                      style={{
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        marginBottom: 2,
+                        fontWeight: c.id === consorcioActivo ? 700 : 500,
+                      }}
+                      onClick={() => elegirConsorcio(c.id)}
                     >
                       {c.nombre}
                     </button>

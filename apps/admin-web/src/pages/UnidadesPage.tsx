@@ -3,10 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
+  EVENTO_CONSORCIO_ACTIVO,
   createUnidad,
   createUnidadesBulk,
   createVinculo,
   desvincular,
+  getConsorcioActivo,
+  setConsorcioActivo,
   listConsorcios,
   listResidentes,
   listUnidades,
@@ -32,6 +35,12 @@ export function UnidadesPage(): JSX.Element {
   const [showForm, setShowForm] = useState(false);
   const [selectedUnidad, setSelectedUnidad] = useState<Unidad | null>(null);
 
+  // Esta pantalla necesita UN consorcio: no existe "las unidades de todos". Así
+  // que respeta la elección global cuando hay una, y cuando la elección es
+  // "todos" cae al primero sin sobrescribirla —si no, entrar acá cambiaría el
+  // contexto del panel entero de callado—.
+  const [cayoAlPrimero, setCayoAlPrimero] = useState(false);
+
   useEffect(() => {
     listConsorcios()
       .then((cs) => {
@@ -39,13 +48,35 @@ export function UnidadesPage(): JSX.Element {
         if (!cs.length) return;
         const fromQuery = searchParams.get('consorcio');
         if (fromQuery && cs.some((c) => c.id === fromQuery)) {
+          // Un link directo manda, y además fija el contexto del panel.
           setConsorcioId(fromQuery);
-        } else if (!consorcioId) {
+          setCayoAlPrimero(false);
+          if (getConsorcioActivo() !== fromQuery) setConsorcioActivo(fromQuery);
+          return;
+        }
+        const activo = getConsorcioActivo();
+        if (activo && cs.some((c) => c.id === activo)) {
+          setConsorcioId(activo);
+          setCayoAlPrimero(false);
+        } else {
           setConsorcioId(cs[0]!.id);
+          setCayoAlPrimero(cs.length > 1);
         }
       })
       .catch((e) => setError(e.message));
   }, [searchParams]);
+
+  useEffect(() => {
+    const sincronizar = () => {
+      const activo = getConsorcioActivo();
+      if (activo) {
+        setConsorcioId(activo);
+        setCayoAlPrimero(false);
+      }
+    };
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+  }, []);
 
   // Acá además hay un caso propio: sin consorcio elegido no hay nada que cargar,
   // y eso tampoco es "sin unidades".
@@ -113,7 +144,7 @@ export function UnidadesPage(): JSX.Element {
           <div className="filters-bar" style={{ padding: '0 0 12px', borderBottom: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="uppercase">Consorcio</span>
-              <select value={consorcioId} onChange={(e) => setConsorcioId(e.target.value)} style={{ minWidth: 240, height: 32 }}>
+              <select value={consorcioId} onChange={(e) => setConsorcioActivo(e.target.value)} style={{ minWidth: 240, height: 32 }}>
                 {consorcios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
@@ -151,6 +182,12 @@ export function UnidadesPage(): JSX.Element {
             </form>
           )}
 
+          {cayoAlPrimero && (
+            <div className="muted small">
+              Estás trabajando en “todos los consorcios”, y las unidades pertenecen a uno.
+              Mostrando el primero; elegí otro acá o en el selector de la izquierda.
+            </div>
+          )}
           {info && <div className="chip ok">{info}</div>}
           {error && <div className="error">{error}</div>}
 

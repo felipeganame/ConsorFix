@@ -11,6 +11,7 @@ export interface SessionUser {
 const TOKEN_KEY = 'cfx.token';
 const USER_KEY = 'cfx.user';
 const TENANT_KEY = 'cfx.tenant';
+const CONSORCIO_KEY = 'cfx.consorcio';
 
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -22,6 +23,7 @@ export function clearSession(): void {
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(TENANT_KEY);
+  sessionStorage.removeItem(CONSORCIO_KEY);
 }
 export function getUser(): SessionUser | null {
   const raw = sessionStorage.getItem(USER_KEY);
@@ -35,6 +37,9 @@ export function getTenantOverride(): string | null {
 }
 export function setTenantOverride(t: string): void {
   sessionStorage.setItem(TENANT_KEY, t);
+  // El consorcio elegido pertenecía a la administración anterior: mantenerlo
+  // dejaría a las pantallas filtrando por un id que la nueva no puede ver.
+  sessionStorage.removeItem(CONSORCIO_KEY);
 }
 
 export class ApiError extends Error {
@@ -194,6 +199,41 @@ export const EVENTO_CONSORCIOS = 'cfx:consorcios-cambiaron';
 
 export function avisarConsorciosCambiaron(): void {
   window.dispatchEvent(new Event(EVENTO_CONSORCIOS));
+}
+
+/**
+ * Consorcio con el que está trabajando el admin, compartido por todas las
+ * pantallas.
+ *
+ * Antes cada pantalla arrancaba con su propio filtro en "Todos", así que elegir
+ * un consorcio en la Bandeja y pasar a Resumen te devolvía a todos. Y el control
+ * del sidebar no seleccionaba nada: navegaba a las unidades de ese consorcio.
+ *
+ * Cadena vacía significa "todos" y es un valor válido, así que se distingue de
+ * `null` (nunca se eligió). Vive en `sessionStorage` como el token y la
+ * administración elegida: se va al cerrar sesión y no sobrevive a cerrar la
+ * pestaña, que para un panel de trabajo es lo que se espera.
+ */
+export const EVENTO_CONSORCIO_ACTIVO = 'cfx:consorcio-activo';
+
+export function getConsorcioActivo(): string | null {
+  return sessionStorage.getItem(CONSORCIO_KEY);
+}
+
+export function setConsorcioActivo(id: string): void {
+  sessionStorage.setItem(CONSORCIO_KEY, id);
+  window.dispatchEvent(new Event(EVENTO_CONSORCIO_ACTIVO));
+}
+
+/**
+ * Olvida la elección. Se llama cuando el consorcio guardado ya no existe (lo
+ * archivaron, o el super admin cambió de administración y ese id pertenece a la
+ * anterior): dejarlo puesto haría que las pantallas filtren por un id fantasma y
+ * muestren vacío sin explicar por qué.
+ */
+export function limpiarConsorcioActivo(): void {
+  sessionStorage.removeItem(CONSORCIO_KEY);
+  window.dispatchEvent(new Event(EVENTO_CONSORCIO_ACTIVO));
 }
 
 export function getConsorcio(id: string): Promise<Consorcio> {

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Topbar } from '../components/Shell.js';
 import {
+  EVENTO_CONSORCIO_ACTIVO,
+  getConsorcioActivo,
   getMetrics,
   listConsorcios,
+  setConsorcioActivo,
   type Consorcio,
   type MetricsOverview,
   type TicketEstado,
@@ -39,7 +42,13 @@ const ESTADO_CHIP: Record<TicketEstado, string> = {
 
 export function MetricsPage(): JSX.Element {
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
-  const [consorcioFilter, setConsorcioFilter] = useState<string>('');
+  const [consorcioFilter, setConsorcioFilter] = useState<string>(getConsorcioActivo() ?? '');
+
+  useEffect(() => {
+    const sincronizar = () => setConsorcioFilter(getConsorcioActivo() ?? '');
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+  }, []);
   const [data, setData] = useState<MetricsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -81,7 +90,7 @@ export function MetricsPage(): JSX.Element {
           <div className="filters-bar" style={{ padding: '0 0 12px', borderBottom: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="uppercase">Consorcio</span>
-              <select value={consorcioFilter} onChange={(e) => setConsorcioFilter(e.target.value)} style={{ minWidth: 240, height: 32 }}>
+              <select value={consorcioFilter} onChange={(e) => setConsorcioActivo(e.target.value)} style={{ minWidth: 240, height: 32 }}>
                 <option value="">Todos</option>
                 {consorcios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>

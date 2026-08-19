@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
+  EVENTO_CONSORCIO_ACTIVO,
   createTicket,
+  getConsorcioActivo,
+  setConsorcioActivo,
   getMetrics,
   listConsorcios,
   listTickets,
@@ -93,7 +96,15 @@ function toCsv(rows: Ticket[], nombreConsorcio: (id: string) => string): string 
 export function BandejaPage(): JSX.Element {
   const navigate = useNavigate();
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
-  const [consorcioFilter, setConsorcioFilter] = useState<string>('');
+  // El consorcio activo lo comparten todas las pantallas: si lo elegiste en el
+  // sidebar o en el Resumen, la Bandeja arranca ahí y no en "Todos".
+  const [consorcioFilter, setConsorcioFilter] = useState<string>(getConsorcioActivo() ?? '');
+
+  useEffect(() => {
+    const sincronizar = () => setConsorcioFilter(getConsorcioActivo() ?? '');
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+  }, []);
   const [estadoFilter, setEstadoFilter] = useState<TicketEstado | ''>('REGISTRADO');
   const [busqueda, setBusqueda] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -304,7 +315,7 @@ export function BandejaPage(): JSX.Element {
         <div className="filters-bar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="uppercase">Consorcio</span>
-            <select value={consorcioFilter} onChange={(e) => setConsorcioFilter(e.target.value)} style={{ minWidth: 200, height: 32 }}>
+            <select value={consorcioFilter} onChange={(e) => setConsorcioActivo(e.target.value)} style={{ minWidth: 200, height: 32 }}>
               <option value="">Todos</option>
               {consorcios.map((c) => (
                 <option key={c.id} value={c.id}>{c.nombre}</option>
