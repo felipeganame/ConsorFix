@@ -1,6 +1,13 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { listConsorcios, type Consorcio } from '../lib/api.js';
+import {
+  getTenantOverride,
+  listConsorcios,
+  listTenants,
+  setTenantOverride,
+  type Consorcio,
+  type Tenant,
+} from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 import { Icons } from './Icons.js';
 
@@ -37,13 +44,47 @@ const NAV_SUPER: NavItem[] = [
 export function Shell(_props: ShellProps): JSX.Element {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const loc = useLocation();
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * El SUPER_ADMIN no pertenece a ninguna administración, así que tiene que
+   * elegir en cuál trabajar: la API le exige el header `x-tenant-id` en todo lo
+   * que es de tenant y responde `no tenant in token` sin él.
+   *
+   * `apiFetch` ya mandaba ese header cuando había una administración elegida, y
+   * **ninguna pantalla la dejaba elegir nunca**: la cañería estaba puesta y no
+   * llegaba a ningún lado. El super admin entraba y la bandeja le mostraba el
+   * error crudo de la API.
+   */
+  const esSuper = user?.kind === 'SUPER_ADMIN';
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantElegido, setTenantElegido] = useState<string | null>(getTenantOverride());
+
   useEffect(() => {
+    if (!esSuper) return;
+    listTenants().then(setTenants).catch(() => undefined);
+  }, [esSuper]);
+
+  useEffect(() => {
+    // Sin administración elegida no hay consorcios que pedir: el request
+    // fallaría y ensuciaría la consola con un error esperado.
+    if (esSuper && !tenantElegido) return;
     listConsorcios().then(setConsorcios).catch(() => undefined);
-  }, []);
+  }, [esSuper, tenantElegido]);
+
+  function elegirTenant(id: string) {
+    setTenantOverride(id);
+    setTenantElegido(id);
+    setSwitcherOpen(false);
+    // Recarga completa a propósito: cada pantalla trae sus datos en su propio
+    // `useEffect` y no hay un store global que invalidar. Es un cambio de
+    // contexto poco frecuente, así que la recarga es más confiable que
+    // sincronizar diez pantallas a mano.
+    window.location.reload();
+  }
 
   useEffect(() => {
     if (!switcherOpen) return;
@@ -67,7 +108,20 @@ export function Shell(_props: ShellProps): JSX.Element {
     .toUpperCase();
 
   const totalConsorcios = consorcios.length;
-  const firstName = consorcios[0]?.nombre ?? 'Sin consorcios';
+  const nombreTenant = tenants.find((t) => t.id === tenantElegido)?.nombre;
+  // El selector de arriba muestra administraciones al super admin y consorcios
+  // al resto: es el mismo lugar, pero el contexto que cada uno cambia es otro.
+  const tituloSwitcher = esSuper
+    ? (nombreTenant ?? 'Elegí una administración')
+    : (consorcios[0]?.nombre ?? 'Sin consorcios');
+  const subtituloSwitcher = esSuper
+    ? (tenantElegido ? 'administración activa' : 'ninguna elegida')
+    : totalConsorcios === 0
+      ? 'agregá uno'
+      : totalConsorcios === 1
+        ? '1 consorcio'
+        : `${totalConsorcios} consorcios`;
+  const faltaElegirTenant = esSuper && !tenantElegido && loc.pathname !== '/administraciones';
 
   function onLogout() {
     logout();
@@ -91,18 +145,16 @@ export function Shell(_props: ShellProps): JSX.Element {
             className="sidebar-tenant"
             style={{ width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
             onClick={() => setSwitcherOpen((o) => !o)}
-            disabled={totalConsorcios === 0}
+            disabled={esSuper ? tenants.length === 0 : totalConsorcios === 0}
           >
             <div className="sidebar-tenant-icon">
               <Icons.building size={14} />
             </div>
             <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {firstName}
+                {tituloSwitcher}
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>
-                {totalConsorcios === 0 ? 'agregá uno' : totalConsorcios === 1 ? '1 consorcio' : `${totalConsorcios} consorcios`}
-              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>{subtituloSwitcher}</div>
             </div>
             <Icons.chevDown size={14} stroke="var(--cf-ink-3)" />
           </button>
@@ -115,17 +167,34 @@ export function Shell(_props: ShellProps): JSX.Element {
                 padding: 6, zIndex: 20, maxHeight: 260, overflowY: 'auto',
               }}
             >
-              {consorcios.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="btn ghost sm"
-                  style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
-                  onClick={() => goToConsorcio(c.id)}
-                >
-                  {c.nombre}
-                </button>
-              ))}
+              {esSuper
+                ? tenants.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="btn ghost sm"
+                      style={{
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        marginBottom: 2,
+                        fontWeight: t.id === tenantElegido ? 700 : 500,
+                      }}
+                      onClick={() => elegirTenant(t.id)}
+                    >
+                      {t.nombre}
+                    </button>
+                  ))
+                : consorcios.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
+                      onClick={() => goToConsorcio(c.id)}
+                    >
+                      {c.nombre}
+                    </button>
+                  ))}
             </div>
           )}
         </div>
@@ -160,7 +229,47 @@ export function Shell(_props: ShellProps): JSX.Element {
       </aside>
 
       <div className="main">
-        <Outlet />
+        {faltaElegirTenant ? (
+          <>
+            <Topbar
+              title="Elegí una administración"
+              subtitle="Como super admin no perteneces a ninguna: tenés que indicar en cuál trabajar"
+            />
+            <div className="content">
+              <section className="stack">
+                <div className="card">
+                  <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--cf-ink-2)' }}>
+                    Los consorcios, las unidades y los tickets pertenecen a una administración.
+                    Elegí una acá —o desde el selector de arriba a la izquierda— y el panel entero
+                    va a mostrar sus datos.
+                  </p>
+                  {tenants.length === 0 ? (
+                    <div className="muted small">
+                      Todavía no hay ninguna. Creá la primera en{' '}
+                      <NavLink to="/administraciones">Administraciones</NavLink>.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {tenants.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className="btn ghost"
+                          style={{ justifyContent: 'flex-start' }}
+                          onClick={() => elegirTenant(t.id)}
+                        >
+                          <Icons.building size={14} /> {t.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <Outlet />
+        )}
       </div>
     </div>
   );

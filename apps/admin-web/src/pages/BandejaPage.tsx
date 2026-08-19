@@ -341,8 +341,8 @@ export function BandejaPage(): JSX.Element {
         {showNuevo && (
           <section style={{ paddingTop: 0 }}>
             <form className="form-grid card" onSubmit={onCrearTicket}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Cargar un reporte a mano</div>
-              <div className="muted small">
+              <div className="form-full" style={{ fontSize: 13, fontWeight: 600 }}>Cargar un reporte a mano</div>
+              <div className="form-full muted small">
                 Para lo que llega por teléfono, en persona o en la reunión de consorcio. Queda sin
                 reportante: el ticket es de la administración.
               </div>
@@ -383,7 +383,7 @@ export function BandejaPage(): JSX.Element {
                 </label>
               )}
               {nvTipo === 'CONDUCTA' && (
-                <div className="muted small">
+                <div className="form-full muted small">
                   La unidad señalada se confirma al validar el ticket, no ahora.
                 </div>
               )}
@@ -400,7 +400,7 @@ export function BandejaPage(): JSX.Element {
                 <span>Título</span>
                 <input value={nvTitulo} onChange={(e) => setNvTitulo(e.target.value)} required minLength={3} maxLength={140} />
               </label>
-              <label>
+              <label className="form-full">
                 <span>Qué pasó</span>
                 <textarea rows={3} value={nvDesc} onChange={(e) => setNvDesc(e.target.value)} required maxLength={4000} />
               </label>

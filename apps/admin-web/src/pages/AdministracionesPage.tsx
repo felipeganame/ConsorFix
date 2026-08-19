@@ -84,6 +84,19 @@ export function AdministracionesPage(): JSX.Element {
     }
   }
 
+  // Qué falta para poder crear, en palabras. La contraseña son 10 caracteres y no
+  // 6 porque es la cuenta que administra un tenant entero; lo exige la API, así
+  // que el formulario lo dice antes de que el intento falle.
+  const falta = !nombre.trim()
+    ? 'el nombre de la administración'
+    : !adminNombre.trim()
+      ? 'el nombre del administrador'
+      : !adminEmail.trim()
+        ? 'el email del administrador'
+        : adminPassword.length < 10
+          ? `${10 - adminPassword.length} caracter${10 - adminPassword.length === 1 ? '' : 'es'} más en la contraseña (mínimo 10)`
+          : null;
+
   return (
     <>
       <Topbar
@@ -102,7 +115,7 @@ export function AdministracionesPage(): JSX.Element {
 
           {showForm && (
             <form className="card form-grid" onSubmit={onCreate}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Alta de una administración</div>
+              <div className="form-full" style={{ fontSize: 13, fontWeight: 600 }}>Alta de una administración</div>
               <label>
                 <span>Nombre de la administración</span>
                 <input value={nombre} onChange={(e) => setNombre(e.target.value)} required minLength={2} maxLength={140} placeholder="Ej. Administración Rivadavia" />
@@ -115,7 +128,9 @@ export function AdministracionesPage(): JSX.Element {
                 </select>
               </label>
 
-              <div className="uppercase mt-2">Su primer administrador</div>
+              <div className="form-full uppercase mt-2" style={{ borderTop: '1px solid var(--cf-line)', paddingTop: 12 }}>
+                Su primer administrador
+              </div>
               <label>
                 <span>Nombre</span>
                 <input value={adminNombre} onChange={(e) => setAdminNombre(e.target.value)} required minLength={2} maxLength={140} />
@@ -139,7 +154,12 @@ export function AdministracionesPage(): JSX.Element {
                   placeholder="Mínimo 10 caracteres"
                 />
               </label>
-              <button type="submit" className="btn primary" disabled={busy || !nombre || !adminEmail || adminPassword.length < 10}>
+              {/* Un botón gris sin explicación es un callejón sin salida: se ve
+                  que no se puede seguir y no se sabe qué falta. */}
+              {falta && (
+                <div className="form-full muted small">Falta: {falta}.</div>
+              )}
+              <button type="submit" className="btn primary" disabled={busy || falta !== null}>
                 {busy ? 'Creando…' : 'Crear administración y su admin'}
               </button>
             </form>

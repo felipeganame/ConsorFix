@@ -124,8 +124,8 @@ export function ResidentesPage(): JSX.Element {
         <section className="stack">
           {showImport && (
             <div className="card form-grid">
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Importar vecinos desde una planilla</div>
-              <div className="muted small">
+              <div className="form-full" style={{ fontSize: 13, fontWeight: 600 }}>Importar vecinos desde una planilla</div>
+              <div className="form-full muted small">
                 Columnas aceptadas: <span className="mono">nombre, telefono, email, unidad, rol</span>.
                 Acepta alias comunes (celular o whatsapp por telefono; depto o lote por unidad;
                 vinculo o tipo por rol) y no distingue acentos ni mayúsculas.
@@ -148,11 +148,11 @@ export function ResidentesPage(): JSX.Element {
                   {nombreArchivo} · {csv.split('\n').filter((l) => l.trim()).length} líneas leídas
                 </div>
               )}
-              <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <label className="form-full" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <input type="checkbox" checked={crearUnidades} onChange={(e) => setCrearUnidades(e.target.checked)} />
                 <span>Crear las unidades que no existan</span>
               </label>
-              <div className="actions">
+              <div className="form-full actions">
                 {/* Primero se prueba, después se aplica: en una planilla de 200
                     filas conviene ver el informe antes de escribir nada. */}
                 <button type="button" className="btn ghost" disabled={busy || !csv || !impConsorcio} onClick={() => correrImport(true)}>
@@ -164,7 +164,7 @@ export function ResidentesPage(): JSX.Element {
               </div>
 
               {informe && (
-                <div className="card tight">
+                <div className="form-full card tight">
                   <div className="row-between">
                     <strong style={{ fontSize: 13 }}>
                       {informe.dryRun ? 'Prueba (no se guardó nada)' : 'Importación aplicada'}
