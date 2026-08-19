@@ -112,7 +112,7 @@ export function Shell(_props: ShellProps): JSX.Element {
   // El selector de arriba muestra administraciones al super admin y consorcios
   // al resto: es el mismo lugar, pero el contexto que cada uno cambia es otro.
   const tituloSwitcher = esSuper
-    ? (nombreTenant ?? 'Elegí una administración')
+    ? (nombreTenant ?? 'Elegí administración')
     : (consorcios[0]?.nombre ?? 'Sin consorcios');
   const subtituloSwitcher = esSuper
     ? (tenantElegido ? 'administración activa' : 'ninguna elegida')
@@ -143,7 +143,12 @@ export function Shell(_props: ShellProps): JSX.Element {
           <button
             type="button"
             className="sidebar-tenant"
-            style={{ width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+            /* Sin `width: 100%`: la clase ya tiene `margin: 0 14px` y es
+               `display: flex`, así que ocupa el ancho disponible descontando sus
+               márgenes. Con el 100% medía 232px + 28px de margen y se desbordaba
+               del sidebar exactamente esos 28px. */
+            style={{ cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+            title={esSuper && !tenantElegido ? 'Elegí una administración para trabajar' : tituloSwitcher}
             onClick={() => setSwitcherOpen((o) => !o)}
             disabled={esSuper ? tenants.length === 0 : totalConsorcios === 0}
           >
