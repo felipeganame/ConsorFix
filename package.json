@@ -20,7 +20,8 @@
     "ai:eval": "turbo run ai:eval --filter=@consorciofix/ai",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "clean": "turbo run clean && rm -rf node_modules",
-    "test:coverage": "turbo run test:coverage"
+    "test:coverage": "turbo run test:coverage",
+    "demo": "pnpm --filter @consorciofix/api demo"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
