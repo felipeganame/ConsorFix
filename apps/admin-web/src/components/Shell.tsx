@@ -117,9 +117,19 @@ export function Shell(_props: ShellProps): JSX.Element {
   const nombreTenant = tenants.find((t) => t.id === tenantElegido)?.nombre;
   // El selector de arriba muestra administraciones al super admin y consorcios
   // al resto: es el mismo lugar, pero el contexto que cada uno cambia es otro.
+  // Para el admin este control NO es un selector de contexto: no existe un
+  // "consorcio activo" global, cada pantalla tiene su propio filtro. Mostraba
+  // `consorcios[0].nombre`, o sea el primero de la lista, y con dos consorcios
+  // decía uno mientras la pantalla trabajaba con el otro. Se muestra el nombre
+  // solo cuando hay uno —ahí no hay ambigüedad posible— y si hay varios se dice
+  // lo que el control realmente es.
   const tituloSwitcher = esSuper
     ? (nombreTenant ?? 'Elegí administración')
-    : (consorcios[0]?.nombre ?? 'Sin consorcios');
+    : totalConsorcios === 0
+      ? 'Sin consorcios'
+      : totalConsorcios === 1
+        ? consorcios[0]!.nombre
+        : 'Mis consorcios';
   const subtituloSwitcher = esSuper
     ? (tenantElegido ? 'administración activa' : 'ninguna elegida')
     : totalConsorcios === 0
@@ -178,6 +188,14 @@ export function Shell(_props: ShellProps): JSX.Element {
                 padding: 6, zIndex: 20, maxHeight: 260, overflowY: 'auto',
               }}
             >
+              {!esSuper && (
+                <div
+                  className="uppercase"
+                  style={{ padding: '4px 8px 6px', color: 'var(--cf-ink-3)', fontSize: 10.5 }}
+                >
+                  Ir a las unidades de
+                </div>
+              )}
               {esSuper
                 ? tenants.map((t) => (
                     <button
