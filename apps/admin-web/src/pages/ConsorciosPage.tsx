@@ -1,7 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
-import { createConsorcio, listConsorcios, updateConsorcio, type Consorcio } from '../lib/api.js';
+import {
+  avisarConsorciosCambiaron,
+  createConsorcio,
+  listConsorcios,
+  updateConsorcio,
+  type Consorcio,
+} from '../lib/api.js';
 
 const TIPO_LABEL: Record<Consorcio['tipo'], string> = {
   EDIFICIO: 'Edificio',
@@ -49,6 +55,7 @@ export function ConsorciosPage(): JSX.Element {
       setDireccion('');
       setShowForm(false);
       load();
+      avisarConsorciosCambiaron();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -70,6 +77,7 @@ export function ConsorciosPage(): JSX.Element {
       await updateConsorcio(id, { nombre: edNombre, direccion: edDireccion });
       setEditando(null);
       load();
+      avisarConsorciosCambiaron();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -85,6 +93,7 @@ export function ConsorciosPage(): JSX.Element {
       // historial la referencian. Archivado se saca de circulación, no se borra.
       await updateConsorcio(c.id, { archivado: !c.archivado });
       load();
+      avisarConsorciosCambiaron();
     } catch (err) {
       setError((err as Error).message);
     } finally {

@@ -243,7 +243,12 @@ export function BandejaPage(): JSX.Element {
     <>
       <Topbar
         title="Bandeja de entrada"
-        subtitle={`${sinTriar} sin triar · IA pre-clasifica cada nuevo reporte`}
+        // "IA pre-clasifica cada nuevo reporte" no era exacto: solo los reportes
+        // que entran por el bot pasan por el clasificador. Los que se cargan
+        // desde la app o a mano llegan sin clasificar, y prometer lo contrario
+        // en la pantalla que usa la administradora todos los días es sembrar
+        // desconfianza en el resto de los números.
+        subtitle={`${sinTriar} sin triar · los reportes del bot llegan pre-clasificados por IA`}
         actions={
           <>
             <button type="button" className="btn ghost" onClick={onExportar} disabled={sorted.length === 0}>
@@ -282,7 +287,11 @@ export function BandejaPage(): JSX.Element {
             <div className="kpi">
               <div className="kpi-label">Tiempo medio resol.</div>
               <div className="kpi-value">{ttrLabel}</div>
-              <div className="kpi-delta ok">métrica del tenant</div>
+              {/* Decía "métrica del tenant": "tenant" es vocabulario del código,
+                  no de la administradora que lee esta pantalla (regla 8). Y el
+                  promedio solo considera los tickets resueltos, que es el dato
+                  que de verdad hay que aclarar acá. */}
+              <div className="kpi-delta ok">solo tickets resueltos</div>
             </div>
             <div className="kpi">
               <div className="kpi-label">Gastos confirmados</div>

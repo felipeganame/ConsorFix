@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  EVENTO_CONSORCIOS,
   getTenantOverride,
   listConsorcios,
   listTenants,
@@ -72,7 +73,12 @@ export function Shell(_props: ShellProps): JSX.Element {
     // Sin administración elegida no hay consorcios que pedir: el request
     // fallaría y ensuciaría la consola con un error esperado.
     if (esSuper && !tenantElegido) return;
-    listConsorcios().then(setConsorcios).catch(() => undefined);
+    const cargar = () => listConsorcios().then(setConsorcios).catch(() => undefined);
+    void cargar();
+    // Se recarga cuando alguna pantalla avisa que la lista cambió, así el
+    // selector no queda diciendo "Sin consorcios" después de crear el primero.
+    window.addEventListener(EVENTO_CONSORCIOS, cargar);
+    return () => window.removeEventListener(EVENTO_CONSORCIOS, cargar);
   }, [esSuper, tenantElegido]);
 
   function elegirTenant(id: string) {

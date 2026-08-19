@@ -74,7 +74,8 @@ export function MetricsPage(): JSX.Element {
 
   return (
     <>
-      <Topbar title="Resumen" subtitle="Métricas operativas del tenant" />
+      {/* "del tenant" era jerga del código: quien lee esto es la administradora. */}
+      <Topbar title="Resumen" subtitle="Métricas operativas de tu administración" />
       <div className="content">
         <section className="stack">
           <div className="filters-bar" style={{ padding: '0 0 12px', borderBottom: 'none' }}>

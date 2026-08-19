@@ -182,6 +182,20 @@ export function createConsorcio(body: {
   return apiFetch<Consorcio>('/consorcios', { method: 'POST', body: JSON.stringify(body) });
 }
 
+/**
+ * Aviso de que la lista de consorcios cambió.
+ *
+ * El Shell la carga una vez al montar para el selector de arriba, así que al
+ * crear el primer consorcio la barra seguía diciendo "Sin consorcios" hasta que
+ * recargabas la página. Un evento del navegador alcanza: es una sola lista, la
+ * cambian dos pantallas y no justifica traer un manejador de estado global.
+ */
+export const EVENTO_CONSORCIOS = 'cfx:consorcios-cambiaron';
+
+export function avisarConsorciosCambiaron(): void {
+  window.dispatchEvent(new Event(EVENTO_CONSORCIOS));
+}
+
 export function getConsorcio(id: string): Promise<Consorcio> {
   return apiFetch<Consorcio>(`/consorcios/${id}`);
 }
