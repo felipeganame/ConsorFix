@@ -72,11 +72,19 @@ export function UnidadesPage(): JSX.Element {
       if (activo) {
         setConsorcioId(activo);
         setCayoAlPrimero(false);
+        return;
       }
+      // Cadena vacía es "todos", y es **falsy**: con un `if (activo)` a secas,
+      // elegir "Todos los consorcios" desde el sidebar no hacía nada acá y el
+      // cartel que explica por qué se ve un solo consorcio no aparecía. Quedaba
+      // el sidebar diciendo "todos" y esta pantalla mostrando uno, en silencio.
+      // Esta pantalla no puede listar las unidades de todos, así que se queda con
+      // el consorcio que está y lo dice.
+      setCayoAlPrimero(consorcios.length > 1);
     };
     window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
     return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
-  }, []);
+  }, [consorcios.length]);
 
   // Acá además hay un caso propio: sin consorcio elegido no hay nada que cargar,
   // y eso tampoco es "sin unidades".
