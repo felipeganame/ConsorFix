@@ -16,7 +16,8 @@
     "seed": "node scripts/seed.cjs",
     "clean": "rm -rf dist .turbo",
     "test:coverage": "vitest run -c vitest.integration.config.ts --coverage",
-    "demo": "tsx scripts/demo-flujo-minimo.ts"
+    "demo": "tsx scripts/demo-flujo-minimo.ts",
+    "bot": "tsx scripts/bot-simular.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1112.0",
