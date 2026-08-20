@@ -141,7 +141,26 @@ export class BotService {
     'menú',
   ]);
 
+  /**
+   * Única puerta de entrada. Marca el webhook como procesado en un solo lugar.
+   *
+   * Antes cada camino se acordaba —o se olvidaba— de marcarlo por su cuenta, y
+   * de ~15 salidas solo cuatro lo hacían: los comandos, los mensajes vacíos y
+   * los errores de audio quedaban en RECIBIDO para siempre (23 de 52 eventos en
+   * desarrollo). Como `wamid` es la clave de idempotencia de la regla 3, una
+   * reentrega del proveedor los habría vuelto a contestar.
+   *
+   * Marcarlo acá y no en cada rama tiene además la semántica correcta: si el
+   * manejo termina sin excepción, ya le respondimos al vecino y no hay que
+   * repetirlo; si lanza, el evento queda sin marcar y una reentrega lo reintenta.
+   */
   async handle(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
+    const r = await this.despachar(inbound);
+    await this.markWebhookProcessed(inbound.wamid);
+    return r;
+  }
+
+  private async despachar(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
     if (inbound.kind === 'other') {
       await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.', inbound);
       return { status: 'unsupported-kind' };
@@ -176,7 +195,6 @@ export class BotService {
         inbound.from,
         'Tu número figura en más de una administración, así que no puedo saber a cuál corresponde este reporte. Contactá a tu administración para que lo resuelvan.',
         inbound);
-      await this.markWebhookProcessed(inbound.wamid);
       return { status: 'ambiguous-tenant' };
     }
     // RF-G02: registrar el inbound abre la ventana de 24 h para poder
@@ -214,7 +232,6 @@ export class BotService {
         ? 'De nada. Cuando necesites algo, contame y lo registro.'
         : 'Cuando necesites algo, contame y lo registro.';
       await this.reply(inbound.from, texto, inbound);
-      await this.markWebhookProcessed(inbound.wamid);
       return { status: 'cortesia' };
     }
 
@@ -372,7 +389,6 @@ export class BotService {
     }
 
     await clearSession(inbound.from);
-    await this.markWebhookProcessed(inbound.wamid);
 
     if (yes) {
       await this.castVote(resi.tenantId, candidate.ticketId, resi.id);
@@ -437,7 +453,6 @@ export class BotService {
     // ruteo cae en `responderComando`, el mismo que atiende la palabra escrita
     // exacta, así que la lista de reportes se arma en un solo lugar.
     if (classified.intencion !== 'REPORTE') {
-      await this.markWebhookProcessed(inbound.wamid);
       if (classified.intencion === 'CONSULTA_ESTADO' || classified.intencion === 'AYUDA') {
         const comando = classified.intencion === 'AYUDA' ? 'ayuda' : 'estado';
         const r = await this.responderComando(inbound, resi, comando);
@@ -491,7 +506,6 @@ export class BotService {
               embedding,
             },
           });
-          await this.markWebhookProcessed(inbound.wamid);
           await this.reply(
             inbound.from,
             `Ya hay un reporte parecido: "${candidate.titulo}" (#${candidate.ticketId.slice(0, 8)}). ¿Sumás tu voto? Respondé Sí o No.`,
@@ -537,7 +551,6 @@ export class BotService {
           embedding,
         },
       });
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(inbound.from, resumenDeReporte(classified), inbound);
       return { status: 'awaiting-report-confirm', ticketId: '' };
     }
@@ -571,7 +584,6 @@ export class BotService {
       t.id,
       mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente)),
     );
-    await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
       classified.tipo === 'CONDUCTA'
@@ -832,7 +844,6 @@ export class BotService {
     const inputs = state.pendingTicketInputs;
     if (!inputs) {
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(inbound.from, 'Se me perdió el reporte. ¿Me lo contás de nuevo?', inbound);
       return { status: 'confirm-session-corrupt' };
     }
@@ -847,7 +858,6 @@ export class BotService {
       // descartado en cada vuelta — y una FOTO acá dejaba el webhook_event en
       // PENDIENTE para siempre.
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       if (inbound.kind === 'text' && raw.length > 0) {
         await this.reply(inbound.from, 'Ok, tomo esto como la versión corregida.', inbound);
         // Se reprocesa como reporte nuevo, ya sin sesión, ARRASTRANDO la media
@@ -866,7 +876,6 @@ export class BotService {
 
     if (no) {
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(
         inbound.from,
         'Listo, lo descarté. Contame de nuevo qué pasa y lo registro como me digas.',
@@ -895,7 +904,6 @@ export class BotService {
 
     await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
     await clearSession(inbound.from);
-    await this.markWebhookProcessed(inbound.wamid);
 
     await this.reply(
       inbound.from,

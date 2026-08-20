@@ -12,6 +12,7 @@ import {
   ticket,
   unidad,
   vinculoResidente,
+  webhookEvent,
 } from '../../src/db/schema/index.js';
 import { BotService } from '../../src/bot/bot.service.js';
 import { StorageService } from '../../src/storage/storage.service.js';
@@ -268,6 +269,32 @@ describe('comandos (RF-B10)', () => {
     const r = await bot.handle(msg(TEL_UNO, 'se rompió el ascensor, alguna novedad?'));
     expect(r.status).not.toMatch(/^comando-/);
     expect(r.status).not.toBe('sin-reporte');
+  });
+
+  it('todo mensaje atendido queda marcado como procesado (regla 3)', async () => {
+    // `wamid` es la clave de idempotencia: si el evento no se marca, una
+    // reentrega del proveedor vuelve a contestarle al vecino. Cada camino se
+    // acordaba de marcarlo por su cuenta y varios se olvidaban —los comandos,
+    // los mensajes vacíos y los errores de audio quedaban en RECIBIDO—, así que
+    // ahora se marca en un solo lugar. Este test recorre caminos deliberadamente
+    // distintos: comando, cortesía, pregunta ruteada por intención, reporte y
+    // mensaje vacío.
+    const casos = ['ayuda', 'estado', 'gracias', 'hola como andas', 'se rompió la bomba de agua', ''];
+    for (const [i, texto] of casos.entries()) {
+      const m = msg(TEL_UNO, texto);
+      await systemDb.insert(webhookEvent).values({
+        provider: 'telegram',
+        wamid: m.wamid,
+        fromPhone: TEL_UNO,
+        payload: { texto, caso: i },
+      });
+      await bot.handle(m);
+      const [ev] = await systemDb
+        .select({ estado: webhookEvent.estado })
+        .from(webhookEvent)
+        .where(eq(webhookEvent.wamid, m.wamid));
+      expect(ev?.estado, `"${texto}" quedó sin marcar`).toBe('PROCESADO');
+    }
   });
 
   it('todo comando que el menú anuncia, el bot lo acepta', async () => {
