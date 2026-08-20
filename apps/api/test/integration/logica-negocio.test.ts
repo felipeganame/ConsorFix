@@ -347,6 +347,32 @@ describe('conducta: anonimato del reportante', () => {
     expect(res.body.reportanteId).toBe(vecino2b.id);
   });
 
+  it('la nota interna tampoco se filtra en un ticket de infraestructura', async () => {
+    // El panel la pide como "NOTA INTERNA — contexto para el equipo". Antes se
+    // ocultaba solo en CONDUCTA, así que en infraestructura el residente la leía
+    // y el rótulo mentía.
+    const r = await api('POST', '/tickets', 'prop1a', {
+      consorcio_id: c1.id,
+      unidad_id: u1a.id,
+      tipo: 'INFRAESTRUCTURA',
+      origen_sugerido: 'ESPACIO_COMUN',
+      titulo: 'Luz del hall, con nota',
+      descripcion: 'quemada',
+    });
+    await api('POST', `/tickets/${r.body.id}/transitions`, 'adminA', {
+      to: 'VALIDADO',
+      origen: 'ESPACIO_COMUN',
+      nota: 'ojo que este vecino reclama por todo',
+    });
+
+    const comoAdmin = await api('GET', `/tickets/${r.body.id}/historial`, 'adminA');
+    expect(comoAdmin.body.some((h: { nota?: string | null }) => h.nota?.includes('reclama'))).toBe(true);
+
+    const comoVecino = await api('GET', `/tickets/${r.body.id}/historial`, 'prop1a');
+    expect(comoVecino.status).toBe(200);
+    expect(comoVecino.body.every((h: { nota?: string | null }) => h.nota == null)).toBe(true);
+  });
+
   it('el historial no le filtra al acusado la nota del admin', async () => {
     const res = await api('GET', `/tickets/${tConducta}/historial`, 'prop1a');
     expect(res.status).toBe(200);

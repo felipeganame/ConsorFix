@@ -300,7 +300,22 @@ export class TicketsService {
         transicion: e.transicion,
         estadoAnterior: e.estadoAnterior,
         estadoNuevo: e.estadoNuevo,
-        ...(esAdmin || !esConducta ? { nota: e.nota } : {}),
+        // La nota es SOLO del admin, en todo tipo de ticket.
+        //
+        // Antes se ocultaba nada más en CONDUCTA, así que en un ticket de
+        // infraestructura un residente que pidiera el historial leía la nota
+        // interna. El panel la pide bajo el rótulo "NOTA INTERNA — contexto para
+        // el equipo": si el vecino puede leerla, el rótulo miente, y quien la
+        // escribe cree que está en privado. Es un campo de texto libre, así que
+        // no se puede confiar en que quien lo llena se autocensure.
+        //
+        // Si algún día hace falta un comentario que el vecino SÍ vea, va en otro
+        // campo con su propio rótulo. Un mismo texto libre no puede servir para
+        // las dos cosas.
+        ...(esAdmin ? { nota: e.nota } : {}),
+        // `autorTipo: 'RESIDENTE'` en el evento de creación le confirma al
+        // acusado que lo denunció un vecino y no la administración, así que en
+        // conducta sigue oculto.
         ...(esAdmin || !esConducta ? { autorTipo: e.autorTipo } : {}),
         ...(esAdmin ? { autorId: e.autorId } : {}),
         at: e.at,
