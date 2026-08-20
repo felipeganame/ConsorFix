@@ -58,6 +58,15 @@ if [[ -z "$URL" ]]; then
 fi
 
 echo "túnel arriba: $URL"
+echo
+echo "  OJO: un túnel rápido publica la API ENTERA, no solo el webhook. Mientras"
+echo "  esté abierto, esa URL llega a /auth/login con tu base de desarrollo"
+echo "  detrás. El riesgo es acotado —el subdominio es aleatorio, va bajo un"
+echo "  certificado comodín (no queda en los logs de Certificate Transparency) y"
+echo "  muere al cerrar esto— pero cerralo cuando termines."
+echo "  Para algo permanente usá telegram-tunel-fijo.sh, que publica solo el"
+echo "  webhook y deja el resto de la API en 404."
+echo
 echo "registrando el webhook…"
 
 RESP="$(curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
