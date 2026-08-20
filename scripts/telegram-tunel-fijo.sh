@@ -98,25 +98,89 @@ YAML
 echo "configuración escrita en ${CONFIG}"
 echo "  publicada: /webhooks/telegram   ·   el resto de la API: 404"
 
+# ── El túnel primero, el webhook después ─────────────────────────────────────
+#
+# Telegram valida el host al registrar el webhook: si el túnel no está arriba o el
+# DNS todavía no se propagó a sus resolvers, responde
+# "Failed to resolve host: Name or service not known". Registrarlo antes de
+# levantar el túnel —como hacía la primera versión de este script— falla siempre.
+echo "levantando el túnel…"
+cloudflared tunnel --config "$CONFIG" run &
+CF_PID=$!
+trap 'kill "$CF_PID" 2>/dev/null || true' EXIT
+
+# Se espera a que la URL pública conteste de verdad. Un 401 es la respuesta
+# correcta: significa que el pedido llegó hasta la API y esta lo rechazó por
+# venir sin el header secreto, o sea que la cadena entera funciona
+# —DNS → Cloudflare → túnel → API—. Un 404 sería el borde de Cloudflare
+# respondiendo sin llegar acá, y un error de conexión, DNS sin propagar.
+echo "esperando a que https://${HOSTNAME_PUBLICO} responda…"
+LISTO=""
+for _ in $(seq 1 60); do
+  CODIGO="$(curl -s -o /dev/null -m 5 -w '%{http_code}' \
+    -X POST "https://${HOSTNAME_PUBLICO}/webhooks/telegram" \
+    -H 'content-type: application/json' -d '{}' || true)"
+  if [[ "$CODIGO" == "401" ]]; then LISTO="si"; break; fi
+  if ! kill -0 "$CF_PID" 2>/dev/null; then
+    echo "el túnel se cerró solo" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+if [[ -z "$LISTO" ]]; then
+  echo "la URL pública no contestó como se esperaba (último código: ${CODIGO:-sin respuesta})." >&2
+  echo "Si es un 404, la regla de ingress no matcheó. Si no hay respuesta, el DNS" >&2
+  echo "todavía no se propagó: esperá un minuto y volvé a correr el script." >&2
+  exit 1
+fi
+echo "  responde 401 sin el secreto: la cadena DNS → Cloudflare → túnel → API funciona"
+
+# Y se comprueba que el resto de la API NO esté publicada, que es el punto de la
+# regla de ingress. Sin esto la restricción sería una intención, no un hecho.
+CODIGO_LOGIN="$(curl -s -o /dev/null -m 8 -w '%{http_code}' \
+  -X POST "https://${HOSTNAME_PUBLICO}/auth/login" \
+  -H 'content-type: application/json' -d '{"email":"x@x.com","password":"x"}' || true)"
+if [[ "$CODIGO_LOGIN" == "404" ]]; then
+  echo "  /auth/login devuelve 404 desde afuera: el resto de la API queda privada"
+else
+  echo "  CUIDADO: /auth/login respondió ${CODIGO_LOGIN} desde internet, debería ser 404." >&2
+  echo "  Revisá la regla de ingress en ${CONFIG} antes de dejar esto abierto." >&2
+fi
+
 if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]]; then
   echo "registrando el webhook (una sola vez: la URL ya no cambia)…"
-  RESP="$(curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-    -d "url=https://${HOSTNAME_PUBLICO}/webhooks/telegram" \
-    -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
-    -d 'drop_pending_updates=true')"
-  if grep -q '"ok":true' <<<"$RESP"; then
-    echo "  webhook OK → https://${HOSTNAME_PUBLICO}/webhooks/telegram"
-  else
+  # Sin `-f` y sin abortar por `set -e`: cuando Telegram rechaza algo, el motivo
+  # viene en el cuerpo de la respuesta y es justo lo que hay que mostrar. Con
+  # `curl -fsS` dentro de una sustitución, `set -e` mataba el script acá y el
+  # manejo de error de abajo nunca corría.
+  for intento in 1 2 3 4 5; do
+    RESP="$(curl -s -m 15 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+      -d "url=https://${HOSTNAME_PUBLICO}/webhooks/telegram" \
+      -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+      -d 'drop_pending_updates=true' || echo '{"ok":false,"description":"curl falló"}')"
+    if grep -q '"ok":true' <<<"$RESP"; then
+      echo "  webhook OK → https://${HOSTNAME_PUBLICO}/webhooks/telegram"
+      break
+    fi
+    # El DNS recién creado tarda en llegar a los resolvers de Telegram, así que
+    # este caso puntual se reintenta en vez de darse por perdido.
+    if grep -qi "resolve host" <<<"$RESP" && [[ $intento -lt 5 ]]; then
+      echo "  Telegram todavía no resuelve el host, reintento en 20s (intento ${intento}/5)…"
+      sleep 20
+      continue
+    fi
     echo "  Telegram rechazó el webhook: $RESP" >&2
-  fi
+    break
+  done
 else
   echo "sin TELEGRAM_BOT_TOKEN / TELEGRAM_WEBHOOK_SECRET en el .env:"
   echo "  el túnel igual queda arriba, pero el webhook hay que registrarlo después."
 fi
 
 echo
-echo "túnel corriendo. Escribile a tu bot desde Telegram."
+echo "túnel corriendo. Escribile a @Consorfix_bot desde Telegram."
 echo "  Mientras esté abierto podés cambiar todo el código: la API recompila sola."
 echo "  Ctrl+C para cerrarlo."
 echo
-exec cloudflared tunnel --config "$CONFIG" run
+wait "$CF_PID"
