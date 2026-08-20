@@ -28,22 +28,38 @@ export type TipoTicket = z.infer<typeof TipoTicket>;
 export type Categoria = z.infer<typeof Categoria>;
 
 /**
+ * Qué está haciendo el vecino con este mensaje.
+ *
+ * Reemplaza al `es_reporte` booleano: decía "esto no es un reporte" pero no
+ * decía qué sí era, así que a una pregunta legítima —"¿cuál fue el último
+ * registro?"— el bot contestaba "no encontré un problema para registrar", que es
+ * cierto y a la vez inútil. Un solo campo en lugar de un booleano más un enum
+ * porque dos campos que contestan la misma pregunta se desincronizan.
+ *
+ * `OTRO` es el cajón de lo que no hay que accionar: cortesías, charla, cualquier
+ * cosa fuera del alcance del bot.
+ */
+export const Intencion = z.enum(['REPORTE', 'CONSULTA_ESTADO', 'AYUDA', 'OTRO']);
+export type Intencion = z.infer<typeof Intencion>;
+
+/**
  * Lo que devuelve el MODELO. `modelo` y `prompt_version` no los produce el LLM:
  * los agrega el adaptador, así que pedírselos al modelo sería a la vez inútil y
  * una fuente de alucinación.
  */
 export const ClassifierModelOutput = z.object({
   /**
-   * Si el mensaje no contiene ningún problema que registrar.
+   * Qué quiere el vecino. Va primero porque decide si el resto de los campos
+   * significan algo.
    *
-   * Sin este campo el modelo está obligado a clasificar cualquier texto, así que
-   * lo inventa: un "Gracias" salía como "Agujero en el techo del pasillo", con
+   * Sin esto el modelo está obligado a clasificar cualquier texto, así que lo
+   * inventa: un "Gracias" salía como "Agujero en el techo del pasillo", con
    * urgencia alta, listo para ensuciar la bandeja de la administración. Un
    * clasificador que no puede abstenerse alucina.
    */
-  es_reporte: z
-    .boolean()
-    .describe('false si el mensaje no describe ningún problema (saludos, gracias, preguntas, charla)'),
+  intencion: Intencion.describe(
+    'REPORTE si describe un problema a registrar; CONSULTA_ESTADO si pregunta por sus reportes; AYUDA si pregunta qué podés hacer; OTRO para saludos, gracias y charla',
+  ),
   titulo: z.string().min(3).max(140).describe('Título corto y descriptivo del reporte'),
   descripcion_normalizada: z.string().min(1).max(2000).describe('El reporte reescrito de forma clara y neutra'),
   tipo: TipoTicket.describe('CONDUCTA si se queja del comportamiento de un vecino; si no, INFRAESTRUCTURA'),
@@ -72,9 +88,9 @@ export const ClassifierModelOutput = z.object({
 export type ClassifierModelOutput = z.infer<typeof ClassifierModelOutput>;
 
 export const ClassifierOutput = z.object({
-  // Los registros anteriores a este campo no lo tienen: se asume que sí eran
+  // Los registros anteriores a este campo no lo tienen: se asume que eran
   // reportes, porque llegaron a crear un ticket.
-  es_reporte: z.boolean().default(true),
+  intencion: Intencion.default('REPORTE'),
   titulo: z.string().min(3).max(140),
   descripcion_normalizada: z.string().min(1).max(2000),
   tipo: TipoTicket,

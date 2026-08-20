@@ -28,6 +28,9 @@ código 1 si no se alcanzan los umbrales, así que se puede poner en CI.
 | classifier-v1.4 | 2026-08-20 | openai gpt-4o-mini | seguridad por principio de riesgo y no por lista de objetos; se saca "portones automáticos ⇒ electricidad", que contradecía al dataset | 98,3 % | 94,9 % | 85,0 % | 62,5 % |
 | classifier-v1.5 | 2026-08-20 | openai gpt-4o-mini | desempate asimétrico (ante riesgo a personas, CRÍTICA) + el tono no altera la urgencia en ninguna dirección | **99,0 %** | **95,6 %** | **88,3 %** | **63,5 %** |
 | classifier-v1.6 | 2026-08-20 | openai gpt-4o-mini | `es_reporte`: el modelo puede abstenerse cuando el mensaje no describe ningún problema | **99,0 %** | **97,0 %** | 87,3 % | **65,5 %** |
+| classifier-v1.7 | 2026-08-20 | openai gpt-4o-mini | `intencion` reemplaza a `es_reporte`: el modelo dice *qué* quiere el vecino, no solo que "no es un reporte" | 98,7 % | 96,3 % | 86,0 % | 57,7 % |
+| classifier-v1.8 | 2026-08-20 | openai gpt-4o-mini | regla asimétrica: si menciona un problema es REPORTE aunque esté redactado como pregunta | 99,0 % | 95,3 % | 86,3 % | 59,4 % |
+| classifier-v1.9 | 2026-08-20 | openai gpt-4o-mini | misma regla, bloque comprimido a 7 líneas | **98,7 %** | **96,3 %** | **87,6 %** | 59,0 % |
 
 ### RF-C03 — urgencia frente al tono (20 casos trampa)
 
@@ -213,3 +216,96 @@ consultas administrativas— que es trabajo pendiente, no resuelto.
 `categoria` sigue abajo del 90 % de corte por lo ya anotado más arriba: falta la
 categoría `gas` y el dataset etiqueta a veces por síntoma y a veces por causa
 raíz. Es deuda de taxonomía, no de prompt.
+
+## v1.7 → v1.9 — la intención, y por qué hicieron falta cuatro variantes (2026-08-20)
+
+`es_reporte` sabía decir "esto no es un reporte" pero no *qué* era. Un vecino
+preguntó "¿cuál fue el último registro?" y recibió "no encontré un problema para
+registrar": cierto e inútil. `intencion` lo reemplaza —un solo campo, no un
+booleano más un enum, porque dos campos que contestan la misma pregunta se
+desincronizan— con cuatro valores: REPORTE, CONSULTA_ESTADO, AYUDA, OTRO. El bot
+rutea CONSULTA_ESTADO y AYUDA al mismo handler que atiende la palabra escrita
+exacta, así que la lista de reportes se arma en un solo lugar.
+
+### El error que importa no es simétrico
+
+v1.7 midió 81 % de intención y los 4 fallos fueron **todos en la misma
+dirección**: problemas reales redactados como pregunta ruteados a
+CONSULTA_ESTADO. Entre ellos "hay olor a gas en el pasillo, ¿es normal?". Ese es
+el error caro: un reclamo que nunca entra al sistema. El inverso —abrir el
+borrador de un ticket para una pregunta— lo cancela el vecino con un "no".
+
+v1.8 agregó la regla explícita con su razón: *si menciona un problema es REPORTE,
+aunque esté escrito como pregunta y aunque pregunte por algo ya reportado; si
+resulta repetido el dedup lo detecta y lo suma al existente, pero lo que no se
+registra no existe.* Eso lo llevó a 100 %.
+
+### Cuatro variantes, y la posición del bloque importa
+
+| variante | intención | tipo | origen | categoría | urgencia |
+|---|---|---|---|---|---|
+| v1.7 — 17 líneas, arriba | 81,0 % | 98,7 % | 96,3 % | 86,0 % | 57,7 % |
+| v1.8a — 11 líneas, arriba | 100,0 % | 98,0 % | 93,9 % | 87,0 % | 57,3 % |
+| v1.8b — 11 líneas, al final | 95,2 % | 99,0 % | 95,3 % | 86,3 % | 59,4 % |
+| **v1.9 — 7 líneas, arriba** | **100,0 %** | **98,7 %** | **96,3 %** | **87,6 %** | 59,0 % |
+
+Un bloque largo al principio del prompt empuja la escala de urgencia hacia abajo y
+la degrada; moverlo al final recupera tipo y origen pero pierde un caso de
+intención. Comprimirlo a 7 líneas y dejarlo arriba gana en las cuatro columnas a
+la vez. La lección es transferible: en este prompt, **cuánto ocupa una instrucción
+compite con las que vienen después**, así que agregar una tarea no es gratis
+aunque el texto agregado sea correcto.
+
+### Lo que este ejercicio destapó sobre la medición
+
+La urgencia parecía haber caído 8 puntos (65,5 % → 57,7 %). Antes de escribirlo
+como costo de la feature se corrió un **control**: el texto del prompt de v1.6
+contra el dataset actual. Dio 61,1 %, no 65,5 %. Con prompt idéntico.
+
+Entonces se corrió v1.9 **tres veces sin cambiar nada**:
+
+| corrida | intención | tipo | origen | categoría | urgencia |
+|---|---|---|---|---|---|
+| a | 100,0 % | 98,7 % | 96,3 % | 87,6 % | 59,0 % |
+| b | 100,0 % | 98,7 % | 95,6 % | 87,6 % | 61,8 % |
+| c | 100,0 % | 98,7 % | 95,9 % | 88,0 % | 59,0 % |
+| rango | 0,0 | 0,0 | 0,7 | 0,4 | **2,8** |
+
+Con `temperature: 0` la urgencia se mueve ~3 puntos entre corridas idénticas; las
+otras cuatro tareas se mueven menos de 1 punto. La urgencia es la única con cuatro
+clases ordinales y fronteras discutibles (MEDIA vs ALTA), así que es la más
+sensible al no-determinismo del proveedor —que existe a temperatura 0: batching y
+ruteo del modelo no garantizan reproducibilidad—.
+
+**Consecuencia para leer la tabla de arriba:** las diferencias de urgencia de ~3
+puntos entre versiones no son evidencia de nada. Varias de las "mejoras" que este
+changelog venía narrando (56,0 → 59,7 → 62,5 → 63,5) caen dentro de esa banda y
+no deberían leerse como efecto del prompt. Entre v1.6 y v1.9 la urgencia mide
+61,1 % (una corrida) contra 59,9 % ± 1,6 (tres corridas): indistinguible. El
+65,5 % registrado antes queda arriba de esa banda, así que no se puede descartar
+un costo real chico, pero tampoco establecerlo con una corrida por configuración.
+
+Cómo medir de acá en adelante: **tres corridas y reportar rango** para cualquier
+afirmación sobre urgencia. Para tipo, origen, categoría e intención una corrida
+alcanza.
+
+### La abstención ahora se mide
+
+El dataset tenía 302 casos y todos eran reportes, así que la abstención no se
+podía medir —era la limitación anotada en v1.6—. Se agregaron 20 casos con
+`expected.intencion` (7 CONSULTA_ESTADO, 3 AYUDA, 5 OTRO y **5 trampas**: problemas
+reales redactados como pregunta, que deben salir REPORTE). Las trampas son lo que
+impide aprobar la métrica abstiniéndose siempre.
+
+También se reetiquetó `amb007` ("hola"), que esperaba `categoria: otros` y `tipo:
+INFRAESTRUCTURA`. Esa etiqueta pedía exactamente lo que v1.6 vino a arreglar:
+convertir un saludo en un ticket de infraestructura. Ahora espera
+`intencion: OTRO`.
+
+`intencion` entra a los criterios de salida con el mismo umbral que `tipo` (95 %)
+porque condiciona todo lo que viene después: errarle hacia REPORTE mete basura
+inventada en la bandeja y errarle en la otra dirección pierde un reclamo.
+
+`categoria` sigue abajo del 90 % por lo ya anotado: falta la categoría `gas` y el
+dataset etiqueta a veces por síntoma y a veces por causa raíz. Deuda de taxonomía,
+no de prompt.

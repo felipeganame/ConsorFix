@@ -430,13 +430,24 @@ export class BotService {
     // la bandeja como "Agujero en el techo del pasillo" con urgencia alta. Es
     // mejor repreguntar que registrar basura — la administración abre la bandeja
     // esperando problemas reales.
-    if (classified.es_reporte === false) {
+    //
+    // Y cuando el mensaje no es un reporte pero sí una pregunta, se contesta la
+    // pregunta en vez de mandarla a repetir. "¿Cuál fue el último registro?"
+    // recibía "no encontré un problema para registrar": cierto e inútil. El
+    // ruteo cae en `responderComando`, el mismo que atiende la palabra escrita
+    // exacta, así que la lista de reportes se arma en un solo lugar.
+    if (classified.intencion !== 'REPORTE') {
+      await this.markWebhookProcessed(inbound.wamid);
+      if (classified.intencion === 'CONSULTA_ESTADO' || classified.intencion === 'AYUDA') {
+        const comando = classified.intencion === 'AYUDA' ? 'ayuda' : 'estado';
+        const r = await this.responderComando(inbound, resi, comando);
+        return { ...r, ticketId: '' };
+      }
       await this.reply(
         inbound.from,
-        'No encontré un problema para registrar en ese mensaje. Contame qué pasa y lo anoto: qué se rompió o qué está mal, y dónde.',
+        'No encontré un problema para registrar en ese mensaje. Contame qué pasa y lo anoto: qué se rompió o qué está mal, y dónde. También podés preguntarme cómo vienen tus reportes.',
         inbound,
       );
-      await this.markWebhookProcessed(inbound.wamid);
       return { status: 'sin-reporte', ticketId: '' };
     }
 
@@ -759,6 +770,8 @@ export class BotService {
         inbound.from,
         [
           'Hola. Contame qué problema hay y lo registro — podés escribirlo, mandar un audio o una foto.',
+          '',
+          'También podés preguntarme en tus palabras cómo vienen tus reportes.',
           '',
           'Comandos:',
           '• *estado* — cómo vienen tus reportes',

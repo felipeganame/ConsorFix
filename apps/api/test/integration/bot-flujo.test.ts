@@ -250,6 +250,26 @@ describe('comandos (RF-B10)', () => {
     expect((await ticketsDe(unConsorcio.id)).length).toBe(antes);
   });
 
+  it('preguntar por los reportes contesta la lista, sin escribir "estado"', async () => {
+    // "¿Cuál fue el último registro?" recibía "no encontré un problema para
+    // registrar": cierto e inútil. Ahora el clasificador dice CONSULTA_ESTADO y
+    // el bot rutea al mismo handler que la palabra escrita exacta.
+    const antes = (await ticketsDe(unConsorcio.id)).length;
+    for (const texto of ['Cuál fue el último registro?', 'cómo vienen mis reclamos?', 'tengo algo pendiente?']) {
+      const r = await bot.handle(msg(TEL_UNO, texto));
+      expect(r.status, texto).toMatch(/^comando-estado/);
+    }
+    expect((await ticketsDe(unConsorcio.id)).length).toBe(antes);
+  });
+
+  it('una pregunta que además trae un problema se registra igual', async () => {
+    // Perder un reporte es peor que no contestar una pregunta: si el mensaje
+    // trae las dos cosas, gana el reporte.
+    const r = await bot.handle(msg(TEL_UNO, 'se rompió el ascensor, alguna novedad?'));
+    expect(r.status).not.toMatch(/^comando-/);
+    expect(r.status).not.toBe('sin-reporte');
+  });
+
   it('todo comando que el menú anuncia, el bot lo acepta', async () => {
     // El menú prometía "*estado*" y el set de comandos solo tenía "estados", así
     // que escribir exactamente la palabra que el bot te dice caía en la lista de
@@ -315,7 +335,8 @@ describe('comandos (RF-B10)', () => {
 
   it('si el clasificador no encuentra un reporte, no inventa uno', async () => {
     // El segundo cinturón, para las frases que no están en la lista de cortesías:
-    // el modelo devuelve `es_reporte: false` y el bot lo respeta. Sin esto,
+    // el modelo devuelve una intención distinta de REPORTE y el bot lo respeta.
+    // Sin esto,
     // "No te dije gracias!" terminaba como un ticket de CONDUCTA titulado
     // "Agradecimiento no expresado".
     const antes = (await ticketsDe(unConsorcio.id)).length;

@@ -28,6 +28,11 @@ import { computeTaskMetrics, pct, renderTask, type Par, type TaskMetrics } from 
 const UMBRALES: Record<string, number> = {
   // El tipo decide el circuito entero (anonimato, votos, a quién se acusa), así
   // que equivocarlo es más caro que equivocar una categoría: se le exige más.
+  // La intención decide si se crea un ticket o no. Errarle hacia REPORTE mete
+  // basura inventada en la bandeja de la administración —el bug que originó este
+  // campo— y errarle en la otra dirección pierde un reclamo. Se le exige lo mismo
+  // que al tipo por la misma razón: condiciona todo lo que viene después.
+  intencion: 0.95,
   tipo: 0.95,
   origen: 0.85,
   categoria: 0.9,
@@ -115,7 +120,13 @@ async function main(): Promise<void> {
   });
   const elapsedMs = Date.now() - t0;
 
-  const tareas: Array<'tipo' | 'origen' | 'categoria' | 'urgencia'> = ['tipo', 'origen', 'categoria', 'urgencia'];
+  const tareas: Array<'intencion' | 'tipo' | 'origen' | 'categoria' | 'urgencia'> = [
+    'intencion',
+    'tipo',
+    'origen',
+    'categoria',
+    'urgencia',
+  ];
   const metricas: TaskMetrics[] = [];
   const fallos: Fallo[] = [];
 

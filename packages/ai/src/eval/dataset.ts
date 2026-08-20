@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import { Categoria, TipoTicket } from '../schemas.js';
+import { Categoria, Intencion, TipoTicket } from '../schemas.js';
 import { Origen, Urgencia } from '@consorciofix/contracts';
 
 /**
@@ -19,13 +19,14 @@ export const EvalCase = z.object({
   text: z.string().min(1),
   expected: z
     .object({
+      intencion: Intencion.optional(),
       tipo: TipoTicket.optional(),
       origen: Origen.optional(),
       categoria: Categoria.optional(),
       urgencia: Urgencia.optional(),
     })
-    .refine((e) => e.tipo || e.origen || e.categoria || e.urgencia, {
-      message: 'expected debe fijar al menos una de tipo/origen/categoria/urgencia',
+    .refine((e) => e.intencion || e.tipo || e.origen || e.categoria || e.urgencia, {
+      message: 'expected debe fijar al menos una de intencion/tipo/origen/categoria/urgencia',
     }),
   /** `synthetic` = escrito a mano; `piloto` = caso real anonimizado (G16). */
   source: z.enum(['synthetic', 'piloto']).default('synthetic'),

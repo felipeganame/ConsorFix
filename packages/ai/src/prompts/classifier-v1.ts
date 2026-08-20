@@ -3,16 +3,17 @@
  * Versionado: cambios requieren correr `pnpm ai:eval` y registrar en CHANGELOG.md
  * (regla 9 de CLAUDE.md).
  */
-export const CLASSIFIER_PROMPT_VERSION = 'classifier-v1.6';
+export const CLASSIFIER_PROMPT_VERSION = 'classifier-v1.9';
 
 export const CLASSIFIER_SYSTEM = `Sos un asistente que recibe descripciones de problemas en edificios, barrios cerrados u oficinas de Argentina (español rioplatense) y devuelve una clasificación estructurada.
 
-PRIMERO decidí si hay algo que registrar. Si el mensaje NO describe ningún
-problema —un saludo, un "gracias", un "ok", una pregunta, una charla, o texto sin
-información— devolvé es_reporte: false y completá el resto con lo mínimo. NO
-inventes un problema que el mensaje no menciona: un "gracias" no es un agujero en
-el techo. Si hay aunque sea un indicio de algo que arreglar o de una queja sobre
-un vecino, es_reporte: true.
+PRIMERO el campo intencion: si el mensaje menciona algo roto, mal, faltante o
+riesgoso es REPORTE, aunque esté escrito como pregunta ("se rompió el ascensor,
+alguna novedad?" y "¿van a arreglar la filtración?" son REPORTE: perder un
+reclamo es el error más caro). Si NO menciona ningún problema: CONSULTA_ESTADO si
+pregunta por sus reportes, AYUDA si pregunta qué podés hacer, OTRO para saludos,
+gracias y charla — y ahí completá el resto con lo mínimo, sin inventar un problema
+que el mensaje no menciona.
 
 Categorías permitidas (string): plomeria, electricidad, ascensor, limpieza, seguridad, conducta, otros.
 
@@ -101,30 +102,10 @@ Clasificá el hecho descrito, no el estado de ánimo de quien lo describe.
 
 Devolvé SOLAMENTE el JSON pedido por el schema. Sin prefacios, sin explicaciones.`;
 
-export const CLASSIFIER_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'titulo',
-    'descripcion_normalizada',
-    'tipo',
-    'categoria',
-    'origen',
-    'urgencia',
-    'confianza',
-  ],
-  properties: {
-    titulo: { type: 'string', minLength: 3, maxLength: 140 },
-    descripcion_normalizada: { type: 'string', minLength: 1, maxLength: 2000 },
-    tipo: { type: 'string', enum: ['INFRAESTRUCTURA', 'CONDUCTA'] },
-    categoria: {
-      type: 'string',
-      enum: ['plomeria', 'electricidad', 'ascensor', 'limpieza', 'seguridad', 'conducta', 'otros'],
-    },
-    unidad_reportada_texto: { type: ['string', 'null'], maxLength: 60 },
-    origen: { type: 'string', enum: ['UNIDAD', 'ESPACIO_COMUN'] },
-    urgencia: { type: 'string', enum: ['CRITICA', 'ALTA', 'MEDIA', 'BAJA'] },
-    ubicacion: { type: ['string', 'null'], maxLength: 200 },
-    confianza: { type: 'number', minimum: 0, maximum: 1 },
-  },
-} as const;
+/*
+ * Acá había un JSON Schema escrito a mano (`CLASSIFIER_JSON_SCHEMA`) que nadie
+ * importaba: `SdkClassifier` deriva el esquema del Zod `ClassifierModelOutput`.
+ * Era una segunda fuente de verdad que se desincronizó en v1.6 y otra vez en
+ * v1.7 —le faltaban los campos nuevos— y que leída de afuera parecía el contrato
+ * real. El contrato es el Zod de `schemas.ts`.
+ */
