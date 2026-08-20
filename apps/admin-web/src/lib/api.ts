@@ -9,6 +9,7 @@ export interface SessionUser {
 }
 
 const TOKEN_KEY = 'cfx.token';
+const REFRESH_KEY = 'cfx.refresh';
 const USER_KEY = 'cfx.user';
 const TENANT_KEY = 'cfx.tenant';
 const CONSORCIO_KEY = 'cfx.consorcio';
@@ -19,8 +20,12 @@ export function getToken(): string | null {
 export function setToken(t: string): void {
   sessionStorage.setItem(TOKEN_KEY, t);
 }
+export function setRefreshToken(t: string): void {
+  sessionStorage.setItem(REFRESH_KEY, t);
+}
 export function clearSession(): void {
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
   sessionStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(TENANT_KEY);
   sessionStorage.removeItem(CONSORCIO_KEY);
@@ -48,7 +53,48 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Renueva el access token con el refresh, una sola vez a la vez.
+ *
+ * El login venía guardando solo el access token y el refresh se descartaba,
+ * aunque la respuesta lo trae y `POST /auth/refresh` existe desde el principio.
+ * Resultado: la sesión se moría en seco a los 15 minutos y la pantalla en la que
+ * estabas mostraba "invalid or expired token" en rojo.
+ *
+ * La promesa se comparte a propósito: si cinco pantallas piden datos al mismo
+ * tiempo y las cinco reciben 401, tiene que haber UN refresh y no cinco —el
+ * segundo usaría un refresh token que el primero ya rotó, y ahí sí se cae la
+ * sesión de verdad.
+ */
+let refreshEnCurso: Promise<boolean> | null = null;
+
+async function renovarToken(): Promise<boolean> {
+  const refresh = sessionStorage.getItem(REFRESH_KEY);
+  if (!refresh) return false;
+  refreshEnCurso ??= (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      if (!res.ok) return false;
+      const j = (await res.json()) as { accessToken?: string; refreshToken?: string };
+      if (!j.accessToken) return false;
+      setToken(j.accessToken);
+      // El endpoint rota el refresh: guardar el nuevo o el próximo intento falla.
+      if (j.refreshToken) setRefreshToken(j.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshEnCurso = null;
+    }
+  })();
+  return refreshEnCurso;
+}
+
+async function pedir(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (!headers.has('content-type') && init?.body) headers.set('content-type', 'application/json');
   const token = getToken();
@@ -56,7 +102,29 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const user = getUser();
   const tenantOverride = getTenantOverride();
   if (user?.kind === 'SUPER_ADMIN' && tenantOverride) headers.set('x-tenant-id', tenantOverride);
-  const res = await fetch(`/api${path}`, { ...init, headers });
+  return fetch(`/api${path}`, { ...init, headers });
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  let res = await pedir(path, init);
+
+  // Un 401 casi siempre es el access token vencido, no una credencial mala: se
+  // renueva y se reintenta una vez. `/auth/*` se excluye para no entrar en bucle.
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    if (await renovarToken()) {
+      res = await pedir(path, init);
+    } else {
+      // El refresh también venció: la sesión terminó de verdad. Se limpia y se
+      // manda al login en vez de dejar al usuario mirando un error crudo en una
+      // pantalla que ya no puede cargar nada.
+      clearSession();
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+      throw new ApiError(401, 'Tu sesión expiró. Volvé a entrar.');
+    }
+  }
+
   if (!res.ok) {
     let detail = res.statusText;
     try {

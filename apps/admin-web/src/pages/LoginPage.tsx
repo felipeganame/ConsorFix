@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { login, setToken } from '../lib/api.js';
+import { login, setRefreshToken, setToken } from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 
 /**
@@ -44,6 +44,9 @@ export function LoginPage(): JSX.Element {
     try {
       const r = await login(email.trim(), password);
       setToken(r.accessToken);
+      // El refresh se guardaba en ninguna parte: la respuesta lo trae y se
+      // descartaba, así que la sesión no se podía renovar y moría a los 15 min.
+      setRefreshToken(r.refreshToken);
       setSession(r.user);
       // `from` es la ruta a la que el usuario quería entrar antes de que el
       // guard lo mandara al login. Restaurarla es correcto cuando se vence la
