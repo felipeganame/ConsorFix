@@ -37,14 +37,25 @@ export const ClassifierModelOutput = z.object({
   descripcion_normalizada: z.string().min(1).max(2000).describe('El reporte reescrito de forma clara y neutra'),
   tipo: TipoTicket.describe('CONDUCTA si se queja del comportamiento de un vecino; si no, INFRAESTRUCTURA'),
   categoria: Categoria,
+  // `nullable` y no `optional`: el modo estricto de salida estructurada de
+  // OpenAI exige que TODAS las propiedades estén en `required`, y un campo
+  // opcional queda afuera —la API rechaza la llamada entera con
+  // "Missing 'unidad_reportada_texto'"—. Nullable expresa lo mismo de una forma
+  // que el modo estricto acepta: el campo siempre viene, con null cuando no
+  // aplica. Esto es lo que hacía que el clasificador real no funcionara nunca,
+  // y solo se podía descubrir con una API key de verdad.
   unidad_reportada_texto: z
     .string()
     .max(60)
-    .optional()
-    .describe('Solo en CONDUCTA: la unidad del vecino señalado, tal como la escribió el residente'),
+    .nullable()
+    .describe('Solo en CONDUCTA: la unidad del vecino señalado, tal como la escribió el residente. null si no aplica'),
   origen: Origen,
   urgencia: Urgencia,
-  ubicacion: z.string().max(200).optional().describe('Dónde ocurre, si el reporte lo menciona'),
+  ubicacion: z
+    .string()
+    .max(200)
+    .nullable()
+    .describe('Dónde ocurre, si el reporte lo menciona. null si no lo dice'),
   confianza: z.number().min(0).max(1).describe('Qué tan seguro está el modelo de esta clasificación'),
 });
 export type ClassifierModelOutput = z.infer<typeof ClassifierModelOutput>;
@@ -54,10 +65,12 @@ export const ClassifierOutput = z.object({
   descripcion_normalizada: z.string().min(1).max(2000),
   tipo: TipoTicket,
   categoria: Categoria,
-  unidad_reportada_texto: z.string().max(60).optional(),
+  // Acepta ausente y null: el modelo real manda null explícito, y el mock —o un
+  // registro viejo— puede omitirlo.
+  unidad_reportada_texto: z.string().max(60).nullish(),
   origen: Origen,
   urgencia: Urgencia,
-  ubicacion: z.string().max(200).optional(),
+  ubicacion: z.string().max(200).nullish(),
   confianza: z.number().min(0).max(1),
   modelo: z.string(),
   prompt_version: z.string(),

@@ -97,7 +97,7 @@ export class BotService {
 
   async handle(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
     if (inbound.kind === 'other') {
-      await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.');
+      await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.', inbound);
       return { status: 'unsupported-kind' };
     }
 
@@ -129,7 +129,7 @@ export class BotService {
       await this.reply(
         inbound.from,
         'Tu número figura en más de una administración, así que no puedo saber a cuál corresponde este reporte. Contactá a tu administración para que lo resuelvan.',
-      );
+        inbound);
       await this.markWebhookProcessed(inbound.wamid);
       return { status: 'ambiguous-tenant' };
     }
@@ -171,7 +171,7 @@ export class BotService {
 
     const consorcios = await this.consorciosDelResidente(resi.id, resi.tenantId);
     if (consorcios.length === 0) {
-      await this.reply(inbound.from, 'No tenés consorcios activos. Contactá a tu administración.');
+      await this.reply(inbound.from, 'No tenés consorcios activos. Contactá a tu administración.', inbound);
       return { status: 'no-active-consorcios' };
     }
 
@@ -181,7 +181,7 @@ export class BotService {
     let mediaPendiente: MediaPendiente | null = null;
     if (inbound.kind === 'audio') {
       if (!inbound.mediaId) {
-        await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.');
+        await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.', inbound);
         return { status: 'audio-no-mediaid' };
       }
       try {
@@ -198,17 +198,17 @@ export class BotService {
         const tr = await this.transcriber.transcribe(dl.bytes, { language: 'es' });
         text = (tr.text ?? '').trim();
         if (text.length === 0) {
-          await this.reply(inbound.from, 'No te entendí el audio. ¿Podés escribirlo?');
+          await this.reply(inbound.from, 'No te entendí el audio. ¿Podés escribirlo?', inbound);
           return { status: 'audio-empty-transcript' };
         }
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'transcription failed');
-        await this.reply(inbound.from, 'No pude procesar tu audio. ¿Podés escribirlo?');
+        await this.reply(inbound.from, 'No pude procesar tu audio. ¿Podés escribirlo?', inbound);
         return { status: 'audio-error' };
       }
     } else if (inbound.kind === 'image') {
       if (!inbound.mediaId) {
-        await this.reply(inbound.from, 'No pude recuperar tu foto. Probá describir con texto qué pasa.');
+        await this.reply(inbound.from, 'No pude recuperar tu foto. Probá describir con texto qué pasa.', inbound);
         return { status: 'image-no-mediaid' };
       }
       try {
@@ -224,7 +224,7 @@ export class BotService {
           promptVersion: VISION_PROMPT_VERSION,
         });
         if (!v.apropiado) {
-          await this.reply(inbound.from, 'La foto que mandaste no parece relacionada con un problema del consorcio. Probá mandar otra o describí con texto.');
+          await this.reply(inbound.from, 'La foto que mandaste no parece relacionada con un problema del consorcio. Probá mandar otra o describí con texto.', inbound);
           return { status: 'image-not-appropriate' };
         }
         // Merge: visión describe lo visible + lo que el usuario escribió.
@@ -232,12 +232,12 @@ export class BotService {
         text = userText.length > 0 ? `${userText}. ${v.descripcion}` : v.descripcion;
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'vision failed');
-        await this.reply(inbound.from, 'No pude analizar la foto. Probá describir con texto qué pasa.');
+        await this.reply(inbound.from, 'No pude analizar la foto. Probá describir con texto qué pasa.', inbound);
         return { status: 'image-error' };
       }
     }
     if (text.length === 0) {
-      await this.reply(inbound.from, 'Mensaje vacío. Contame qué pasa.');
+      await this.reply(inbound.from, 'Mensaje vacío. Contame qué pasa.', inbound);
       return { status: 'empty' };
     }
 
@@ -252,7 +252,7 @@ export class BotService {
       await this.reply(
         inbound.from,
         `Tenés ${consorcios.length} consorcios. ¿A cuál refiere el reporte?\n${list}\n\nRespondé con el número.`,
-      );
+        inbound);
       return { status: 'awaiting-consorcio-choice' };
     }
 
@@ -278,14 +278,14 @@ export class BotService {
     const options = state.options ?? [];
     if (!Number.isInteger(n) || n < 1 || n > options.length) {
       const list = options.map((o, i) => `${i + 1}. ${o.nombre}`).join('\n');
-      await this.reply(inbound.from, `No entendí. Respondé con un número del 1 al ${options.length}.\n${list}`);
+      await this.reply(inbound.from, `No entendí. Respondé con un número del 1 al ${options.length}.\n${list}`, inbound);
       return { status: 'consorcio-choice-invalid' };
     }
     const chosen = options[n - 1]!;
     const pendingText = state.pendingText ?? '';
     await clearSession(inbound.from);
     if (!pendingText) {
-      await this.reply(inbound.from, `Listo, consorcio ${chosen.nombre}. Contame qué pasa.`);
+      await this.reply(inbound.from, `Listo, consorcio ${chosen.nombre}. Contame qué pasa.`, inbound);
       return { status: 'consorcio-chosen-no-pending' };
     }
     return this.classifyDedupCreate(inbound, resi, chosen.consorcioId, chosen.unidadId, pendingText);
@@ -300,14 +300,14 @@ export class BotService {
     const yes = /^(s|si|sí|yes|y|1)$/i.test(raw);
     const no = /^(n|no|2)$/i.test(raw);
     if (!yes && !no) {
-      await this.reply(inbound.from, 'Respondé Sí para sumar tu voto al reporte existente, o No para crear uno nuevo.');
+      await this.reply(inbound.from, 'Respondé Sí para sumar tu voto al reporte existente, o No para crear uno nuevo.', inbound);
       return { status: 'dedup-confirm-invalid' };
     }
     const candidate = state.dedupCandidate;
     const inputs = state.pendingTicketInputs;
     if (!candidate || !inputs) {
       await clearSession(inbound.from);
-      await this.reply(inbound.from, 'Tu sesión expiró. Volvé a mandar el reporte.');
+      await this.reply(inbound.from, 'Tu sesión expiró. Volvé a mandar el reporte.', inbound);
       return { status: 'dedup-session-corrupt' };
     }
 
@@ -319,6 +319,7 @@ export class BotService {
       await this.reply(
         inbound.from,
         `Sumé tu voto al reporte "${candidate.titulo}" (#${candidate.ticketId.slice(0, 8)}). Te vamos a notificar cuando avance.`,
+        inbound,
       );
       return { status: 'voted-existing', ticketId: candidate.ticketId };
     }
@@ -341,6 +342,7 @@ export class BotService {
     await this.reply(
       inbound.from,
       `Ok, registré un reporte nuevo (#${t.id.slice(0, 8)}). Categoría: ${inputs.classifiedCategoria}, urgencia: ${inputs.classifiedUrgencia}. El administrador lo va a validar.`,
+      inbound,
     );
     return { status: 'created-new', ticketId: t.id };
   }
@@ -359,7 +361,7 @@ export class BotService {
       classified = await this.classifier.classify(text, { promptVersion: CLASSIFIER_PROMPT_VERSION });
     } catch (err) {
       this.log.error({ err: (err as Error).message }, 'classifier failed');
-      await this.reply(inbound.from, 'No pude procesar tu reporte en este momento. Probá de nuevo en unos minutos.');
+      await this.reply(inbound.from, 'No pude procesar tu reporte en este momento. Probá de nuevo en unos minutos.', inbound);
       return { status: 'classifier-error', ticketId: '' };
     }
 
@@ -397,7 +399,9 @@ export class BotService {
               classifiedConfianza: classified.confianza,
               classifiedModelo: classified.modelo,
               classifiedPromptVersion: classified.prompt_version,
-              ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+              // `!= null` cubre null y undefined: el modelo ahora manda null explícito
+          // cuando el reporte no dice dónde, y la sesión guarda solo strings.
+          ...(classified.ubicacion != null && { classifiedUbicacion: classified.ubicacion }),
               embedding,
             },
           });
@@ -405,6 +409,7 @@ export class BotService {
           await this.reply(
             inbound.from,
             `Ya hay un reporte parecido: "${candidate.titulo}" (#${candidate.ticketId.slice(0, 8)}). ¿Sumás tu voto? Respondé Sí o No.`,
+            inbound,
           );
           return { status: 'dedup-offered', ticketId: candidate.ticketId };
         }
@@ -438,7 +443,9 @@ export class BotService {
           classifiedConfianza: classified.confianza,
           classifiedModelo: classified.modelo,
           classifiedPromptVersion: classified.prompt_version,
-          ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+          // `!= null` cubre null y undefined: el modelo ahora manda null explícito
+          // cuando el reporte no dice dónde, y la sesión guarda solo strings.
+          ...(classified.ubicacion != null && { classifiedUbicacion: classified.ubicacion }),
           ...(classified.uso ? { classifiedUso: classified.uso } : {}),
           ...(subida ? { mediaSubida: subida } : {}),
           embedding,
@@ -484,6 +491,7 @@ export class BotService {
       classified.tipo === 'CONDUCTA'
         ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó. El administrador lo va a revisar.`
         : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
+      inbound,
     );
     return { status: 'created', ticketId: t.id };
   }
@@ -884,7 +892,20 @@ export class BotService {
    * Responde por el MISMO canal del que vino el mensaje. Sin esto, un reporte
    * hecho por Telegram recibiría la respuesta por WhatsApp — o no la recibiría.
    */
-  private async reply(to: string, text: string, inbound?: InboundMessage) {
+  /**
+   * Responde al vecino por el canal del que vino el mensaje.
+   *
+   * `inbound` es OBLIGATORIO a propósito. Era opcional, y cada llamada que se lo
+   * olvidaba caía al proveedor de WhatsApp aunque el mensaje hubiera entrado por
+   * Telegram: el texto salía dirigido al `chat_id` como si fuera un teléfono, así
+   * que el vecino no recibía nada y el mensaje terminaba en el outbox del mock.
+   * Verificado con un Telegram real: "No tenés consorcios activos" salió a
+   * WhatsApp con destino 5050393967, que es un chat_id.
+   *
+   * Con el parámetro obligatorio el compilador señala cualquier llamada que se
+   * olvide del canal, así que el error no puede volver a colarse.
+   */
+  private async reply(to: string, text: string, inbound: InboundMessage) {
     try {
       if (inbound?.channel === 'telegram') {
         const destino = inbound.externalId ?? to;
