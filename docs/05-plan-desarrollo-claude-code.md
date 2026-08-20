@@ -121,23 +121,49 @@
 
 ---
 
-## Estado real al 2026-08-18
+## Estado real al 2026-08-20
 
 Verificado ejecutando, no leyendo. Lo que sigue vale más que las tildes de las tablas de arriba.
+
+Actualizado el 2026-08-20, después de conectar la API key de OpenAI y correr el
+clasificador contra el dataset y contra Telegram real.
 
 | Fase | Estado | Qué falta concretamente |
 |---|---|---|
 | 0 — Fundaciones | ✅ | Branch protection en `main` (tarea 0.3) nunca se configuró |
 | 1 — Dominio, RBAC, tickets | ✅ | Nada de alcance vigente. RF-D03/D04/D07 superados por ADR-002 |
-| 2 — WhatsApp texto | 🟡 | Falta el paso de resumen+confirmación (RF-B06), la ventana de 24 h y las plantillas HSM versionadas (RF-G02). Las notificaciones salen fire-and-forget, sin cola |
-| 3 — IA real | 🟡 | **Solo falta poner la API key.** Dataset de 302 casos, `ai:eval` con umbrales y persistencia de sugerencias listos. Quedan el panel de baja confianza (3.7) y la telemetría de costo (3.8) |
-| 4 — App móvil | 🟡 | Push notifications (`expo-notifications` no está ni en dependencias) y E2E Maestro. La app tampoco muestra `costosConfirmados` |
+| 2 — WhatsApp texto | ✅ | RF-B06 (resumen + confirmación) cerrado. Notificaciones con cola durable, backoff y reaper; la ventana de 24 h se calcula con `residente.ultimo_inbound_at` |
+| 3 — IA real | 🟡 | **La key está puesta y el clasificador corre contra el modelo real.** Dataset de 322 casos; `intencion` 100 %, `tipo` 98,7 %, `origen` 96,3 % pasan los umbrales; `categoria` 87,6 % queda abajo del 90 % por deuda de taxonomía (falta la categoría `gas`, y el dataset etiqueta a veces por síntoma y a veces por causa raíz) — es decisión de producto, no de prompt. Queda la bandeja dedicada de baja confianza (3.7): hoy la confianza se ve por ticket, pero no hay cola de revisión filtrada. Transcripción de audio y visión siguen sin ejercitarse contra el proveedor real |
+| 4 — App móvil | 🟡 | Push notifications (`expo-notifications` no está ni en dependencias) y E2E Maestro. `costosConfirmados` ya se muestra en el feed y en el detalle |
 | 5 — Conductas y costos | ✅ | Nada. RF-F01 cerrado con la opción A |
 | 6 — Hardening | ❌ | Sin arrancar, salvo el gate de cobertura y el upgrade de drizzle que ya se hicieron |
 
 **Canales de bot:** además de WhatsApp hay Telegram, los dos detrás de `IMessagingProvider`. Telegram no necesita verificación de Meta Business ni plantillas aprobadas, así que conviene para desarrollar.
 
-**Lo que más conviene atacar ahora**, en orden: la key de IA y su corrida de `ai:eval` (desbloquea el capítulo de validación), la cobertura de `bot` (10 %) y `webhooks` (16 %), y la cola de notificaciones.
+**Deuda abierta que rompe una regla no negociable:** `sesion_bot` tiene `tenant_id`
+y `consorcio_ctx_id` pero **no tiene RLS activado ni política** (verificado con
+`pg_class.relrowsecurity`), contra la regla 1 de CLAUDE.md. Su `estado_flujo`
+guarda el texto pendiente del reporte y las opciones de consorcio, así que es dato
+de tenant. `webhook_event` tampoco tiene RLS, pero ahí es correcto: guarda el
+payload crudo del proveedor *antes* de saber a qué tenant corresponde. Falta la
+política de `sesion_bot` y su test en `test:isolation`.
+
+**Medición del clasificador (2026-08-20).** La urgencia tiene ~3 puntos de
+variación entre corridas idénticas con `temperature: 0` (medido: tres corridas,
+mismo prompt, 59,0 / 61,8 / 59,0 %), mientras las otras cuatro tareas se mueven
+menos de 1 punto. Cualquier afirmación sobre urgencia necesita tres corridas y
+reportar rango; para el resto una corrida alcanza. El detalle está en
+`packages/ai/src/prompts/CHANGELOG.md`.
+
+**Cobertura medida el 2026-08-18** (integración, por módulo): global 72,5 %.
+`webhooks` 14 % es el más bajo con diferencia — la firma HMAC y el parseo de
+payloads casi no se ejercitan por HTTP. Después `notifications` 62 % y
+`core-admin` 63 %. `bot` subió de 10 % a 66,6 % con la suite `bot-flujo`.
+
+**Lo que más conviene atacar ahora**, en orden: la política RLS de `sesion_bot`
+(rompe la regla 1), la cobertura de `webhooks` (14 %), y las dos decisiones de
+taxonomía que bloquean el umbral de `categoria` — agregar la categoría `gas` y
+definir si se etiqueta por síntoma o por causa raíz.
 
 ---
 

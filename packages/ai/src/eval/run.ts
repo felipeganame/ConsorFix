@@ -28,6 +28,11 @@ import { computeTaskMetrics, pct, renderTask, type Par, type TaskMetrics } from 
 const UMBRALES: Record<string, number> = {
   // El tipo decide el circuito entero (anonimato, votos, a quién se acusa), así
   // que equivocarlo es más caro que equivocar una categoría: se le exige más.
+  // La intención decide si se crea un ticket o no. Errarle hacia REPORTE mete
+  // basura inventada en la bandeja de la administración —el bug que originó este
+  // campo— y errarle en la otra dirección pierde un reclamo. Se le exige lo mismo
+  // que al tipo por la misma razón: condiciona todo lo que viene después.
+  intencion: 0.95,
   tipo: 0.95,
   origen: 0.85,
   categoria: 0.9,
@@ -115,7 +120,13 @@ async function main(): Promise<void> {
   });
   const elapsedMs = Date.now() - t0;
 
-  const tareas: Array<'tipo' | 'origen' | 'categoria' | 'urgencia'> = ['tipo', 'origen', 'categoria', 'urgencia'];
+  const tareas: Array<'intencion' | 'tipo' | 'origen' | 'categoria' | 'urgencia'> = [
+    'intencion',
+    'tipo',
+    'origen',
+    'categoria',
+    'urgencia',
+  ];
   const metricas: TaskMetrics[] = [];
   const fallos: Fallo[] = [];
 
@@ -144,6 +155,46 @@ async function main(): Promise<void> {
       console.log(`    [${f.tarea}] ${f.id}: esperaba ${f.esperado}, dio ${f.obtenido ?? '(nada)'}`);
       console.log(`        "${f.text.slice(0, 92)}"`);
     }
+    console.log('');
+  }
+
+  // ── RF-C03: urgencia técnica, independiente del tono ─────────────────────
+  //
+  // El dataset tiene 20 casos trampa etiquetados `tono-inflado` y
+  // `tono-atenuado`: "URGENTÍSIMO!!! SE QUEMÓ UNA LAMPARITA" tiene que dar BAJA,
+  // y "nada importante, pero hay un cable pelado" tiene que dar CRITICA. Son la
+  // única evidencia de que el clasificador juzga por criterio técnico y no por
+  // cuánto grita quien escribe — que es el argumento central de la tesis y lo que
+  // distingue esto de un triage humano leyendo por tono.
+  //
+  // Estaban en el dataset desde el principio y el eval los promediaba con el
+  // resto, así que la métrica que sostiene el argumento no se reportaba nunca.
+  const conTono = casos
+    .map((caso, i) => ({ caso, salida: salidas[i] }))
+    .filter(({ caso }) => caso.tags?.some((t) => t.startsWith('tono-')));
+
+  if (conTono.length > 0) {
+    const porTag = new Map<string, { total: number; aciertos: number }>();
+    const desaciertos: string[] = [];
+    for (const { caso, salida } of conTono) {
+      const esperado = caso.expected.urgencia;
+      if (!esperado) continue;
+      const tag = caso.tags?.find((t) => t.startsWith('tono-')) ?? 'tono';
+      const acc = porTag.get(tag) ?? { total: 0, aciertos: 0 };
+      acc.total += 1;
+      if (salida?.urgencia === esperado) acc.aciertos += 1;
+      else desaciertos.push(`      ${caso.id}: esperaba ${esperado}, dio ${salida?.urgencia ?? '(nada)'} — "${caso.text.slice(0, 64)}"`);
+      porTag.set(tag, acc);
+    }
+    const total = [...porTag.values()].reduce((a, x) => a + x.total, 0);
+    const aciertos = [...porTag.values()].reduce((a, x) => a + x.aciertos, 0);
+    console.log('  ── RF-C03: urgencia frente al tono ──');
+    console.log(`    global: ${pct(aciertos / total)} (${aciertos}/${total})`);
+    for (const [tag, x] of [...porTag].sort()) {
+      const que = tag === 'tono-inflado' ? 'dramatizado, urgencia real baja' : 'minimizado, urgencia real alta';
+      console.log(`    ${tag.padEnd(15)} ${pct(x.aciertos / x.total)} (${x.aciertos}/${x.total})  ${que}`);
+    }
+    for (const d of desaciertos.slice(0, 8)) console.log(d);
     console.log('');
   }
 

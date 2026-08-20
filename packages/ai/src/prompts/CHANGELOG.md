@@ -22,6 +22,70 @@ código 1 si no se alcanzan los umbrales, así que se puede poner en CI.
 |---|---|---|---|---|---|---|---|
 | classifier-v1.0 | 2026-08-17 | mock | baseline del clasificador simulado | — | 61,1 % | 50,7 % | 37,2 % |
 | classifier-v1.1 | 2026-08-17 | mock | detección de `tipo` y `unidad_reportada_texto` (RF-F01) | 88,3 % | 61,1 % | 50,7 % | 37,2 % |
+| classifier-v1.1 | 2026-08-20 | **openai** gpt-4o-mini | primera corrida con el modelo real | 98,7 % | 90,5 % | 80,7 % | 55,6 % |
+| classifier-v1.2 | 2026-08-20 | **openai** gpt-4o-mini | guía por categoría + `otros` como último recurso; conducta ⇒ origen UNIDAD; CRÍTICA vs ALTA definidas | 98,7 % | **94,9 %** | 84,3 % | 56,0 % |
+| classifier-v1.3 | 2026-08-20 | openai gpt-4o-mini | instalaciones generales son ESPACIO_COMUN; escala de urgencia completa (MEDIA vs ALTA) | 98,3 % | 95,6 % | 85,3 % | 59,7 % |
+| classifier-v1.4 | 2026-08-20 | openai gpt-4o-mini | seguridad por principio de riesgo y no por lista de objetos; se saca "portones automáticos ⇒ electricidad", que contradecía al dataset | 98,3 % | 94,9 % | 85,0 % | 62,5 % |
+| classifier-v1.5 | 2026-08-20 | openai gpt-4o-mini | desempate asimétrico (ante riesgo a personas, CRÍTICA) + el tono no altera la urgencia en ninguna dirección | **99,0 %** | **95,6 %** | **88,3 %** | **63,5 %** |
+| classifier-v1.6 | 2026-08-20 | openai gpt-4o-mini | `es_reporte`: el modelo puede abstenerse cuando el mensaje no describe ningún problema | **99,0 %** | **97,0 %** | 87,3 % | **65,5 %** |
+| classifier-v1.7 | 2026-08-20 | openai gpt-4o-mini | `intencion` reemplaza a `es_reporte`: el modelo dice *qué* quiere el vecino, no solo que "no es un reporte" | 98,7 % | 96,3 % | 86,0 % | 57,7 % |
+| classifier-v1.8 | 2026-08-20 | openai gpt-4o-mini | regla asimétrica: si menciona un problema es REPORTE aunque esté redactado como pregunta | 99,0 % | 95,3 % | 86,3 % | 59,4 % |
+| classifier-v1.9 | 2026-08-20 | openai gpt-4o-mini | misma regla, bloque comprimido a 7 líneas | **98,7 %** | **96,3 %** | **87,6 %** | 59,0 % |
+
+### RF-C03 — urgencia frente al tono (20 casos trampa)
+
+| Version | global | tono-inflado | tono-atenuado |
+|---|---|---|---|
+| classifier-v1.4 | 60,0 % | 80,0 % | 40,0 % |
+| classifier-v1.5 | **70,0 %** | 60,0 % | **80,0 %** |
+| classifier-v1.6 | **70,0 %** | **70,0 %** | 70,0 % |
+
+Estos 20 casos son el argumento central de la tesis y **el eval no los medía por
+separado**: estaban en el dataset desde el principio, promediados con los otros
+282. Se agregó la métrica al `ai:eval`, partida en las dos direcciones del sesgo,
+porque fallar en cada una significa algo distinto: en `tono-inflado` el sistema se
+deja llevar por el drama; en `tono-atenuado` pasa por alto un peligro real porque
+el vecino fue educado, y eso es mucho más grave.
+
+**El hallazgo no es el porcentaje, es el patrón.** En v1.4 el modelo detectaba
+correctamente la gravedad de los casos minimizados —los ubicaba en ALTA, no en
+BAJA— pero descontaba un nivel por la cortesía del mensaje. En la dirección
+opuesta pasaba lo simétrico: *"URGENTÍSIMO una lamparita"* subía de BAJA a MEDIA.
+El tono corría la urgencia exactamente un nivel, en su misma dirección.
+
+v1.5 lo corrige con un desempate **asimétrico**: sin riesgo a personas se elige el
+nivel menor (inflar todo hace que nada sea urgente), pero ante riesgo se elige
+CRÍTICA aunque haya duda, porque subestimar un peligro cuesta una persona
+lastimada y sobreestimarlo cuesta una visita de más. El acierto en `tono-atenuado`
+pasó de 40 % a 80 %, a costa de `tono-inflado` (80 % → 60 %). Es el intercambio
+correcto y conviene defenderlo como decisión, no disimularlo como mejora neta.
+
+### Nota metodológica: por qué se paró en v1.5
+
+Categoría recorrió 80,7 % → 84,3 % → 85,3 % → 85,0 % → 88,3 % en cinco
+iteraciones, contra un umbral de 90 % (RF-C02). Seguir agregando reglas para que
+el modelo acierte casos puntuales de este dataset sería **sobreajustar al conjunto
+de evaluación**: el número sube y la capacidad real no. Los cambios de v1.3 a v1.5
+se limitaron a corregir contradicciones introducidas por versiones anteriores y a
+reemplazar listas de objetos por los principios que esas listas intentaban
+expresar.
+
+El análisis de los 47 desaciertos de categoría en v1.3 mostró tres grupos:
+
+1. **Una contradicción propia**: v1.2 mandaba "portones automáticos" a
+   electricidad y el dataset los etiqueta `otros`. Corregido en v1.4.
+2. **Una categoría faltante en la taxonomía**: el gas no es plomería ni
+   electricidad, y aparece en al menos cuatro casos. El dataset los pone en
+   `plomeria` (por los caños) y el modelo en `otros` o `seguridad` (por el
+   riesgo); los dos criterios son razonables. RF-C02 ya prevé que la taxonomía sea
+   configurable, así que agregar `gas` es coherente con el diseño.
+3. **Ambigüedad irreducible entre síntoma y causa raíz**: *"se cayó un pedazo de
+   revoque del techo del baño por la humedad"* está etiquetado `plomeria` (la
+   causa) y el modelo responde `otros` (lo que se ve). Hace falta fijar el
+   criterio y aplicarlo a los 302 casos antes de que este número signifique algo.
+
+Antes de volver a tocar el prompt conviene resolver 2 y 3, que son decisiones de
+producto y de etiquetado, no de ingeniería de prompts.
 
 ### Por qué `tipo` tiene el umbral más alto (95 %)
 
@@ -53,6 +117,59 @@ pnpm ai:eval -- --provider openai --out results/classifier-v1.0-openai.json
 Esa corrida es la que produce las métricas del capítulo de validación de la
 tesis. El comando imprime al final una fila lista para pegar en esta tabla.
 
+## Lectura de la corrida del 2026-08-20 (primera con modelo real)
+
+Antes de esta fecha las cifras salían del mock, que no es una medición: el stub
+clasifica por palabras clave y siempre acierta lo que él mismo decidió. Al poner
+una API key apareció que **el clasificador real nunca había funcionado**: el modo
+estricto de salida estructurada de OpenAI exige que todas las propiedades estén en
+`required`, dos campos eran `optional()`, y las 302 llamadas se rechazaban. Está
+en el commit que arregla el schema; vale para la tesis como ejemplo de que
+"implementado" y "funciona" no son lo mismo.
+
+**Qué cambió v1.2 y por qué.** La matriz de confusión de v1.1 mostraba una sola
+causa dominante en categoría: `otros` con 50,5 % de precisión, comiéndose 15 casos
+de plomería, 15 de seguridad, 11 de conducta y 7 de limpieza. Cuando el modelo
+elegía una categoría específica acertaba entre 96 % y 100 %, así que el problema
+no era de capacidad sino de instrucción: el prompt listaba las siete categorías
+sin decir qué entra en cada una ni que `otros` fuera el último recurso.
+
+**El eval encontró una ambigüedad de la especificación, no solo errores.** Los 21
+desaciertos de `origen` en v1.1 eran casi todos conductas donde el dataset dice
+UNIDAD y el modelo decía ESPACIO_COMUN (*"el del 3D no levanta la caca del perro
+en el jardín"*). Ninguno se equivocaba: `origen` significaba dos cosas distintas
+—dónde ocurre el hecho, o quién puede verlo—. v1.2 lo define como decisión de
+visibilidad y fija que una conducta es siempre UNIDAD, porque publicar una
+denuncia a todo el consorcio expone a las dos partes. El recall de UNIDAD pasó de
+84,3 % a 97,0 %.
+
+**Lo que sigue faltando, con su causa identificada.**
+
+- **Categoría 84,3 % contra un umbral de 90 %** (RF-C02). `otros` mejoró de 50,5 %
+  a 60,7 % de precisión pero sigue absorbiendo 12 casos de plomería y 10 de
+  seguridad. Seguridad tiene 64,7 % de recall.
+- **Origen: instalaciones generales mal clasificadas.** El prompt enumera lugares
+  comunes (palier, hall, cochera) y no menciona instalaciones centrales, así que
+  *"la calefacción central"*, *"el filtro del tanque"*, *"el matafuegos del quinto
+  piso"* y *"el toldo de la terraza"* se van a UNIDAD. Es una omisión del prompt,
+  no del modelo.
+- **Urgencia 56 %, y es el más débil por una razón de especificación**: de 105
+  casos MEDIA el modelo dijo ALTA en 49. v1.2 definió CRÍTICA vs ALTA (recall de
+  CRÍTICA: 32 % → 42 %) pero **nadie definió dónde termina MEDIA y empieza ALTA**,
+  ni en el prompt ni en los requerimientos. Sin esa definición la métrica mide un
+  desacuerdo, no un error.
+- **Ambigüedades del dataset que ningún prompt puede resolver.** *"Entraron a
+  robar a una cochera y forzaron un auto"* no es una cosa rota ni la conducta de un
+  vecino: la taxonomía no tiene dónde ponerlo. *"Dejan la basura afuera del
+  contenedor"* es conducta y limpieza a la vez. *"El caño de la cocina del 4to
+  gotea sobre la cochera"* nace en una unidad y afecta un espacio común. Antes de
+  seguir subiendo números hay que decidir qué es la respuesta correcta en estos
+  casos, o marcarlos como indeterminables igual que ya se hace con los `ambiguo`.
+
+El dataset es 100 % sintético (302 casos, 0 del piloto). Las cifras miden
+consistencia contra etiquetas propias, no desempeño en producción, y conviene
+decirlo así en la defensa.
+
 ## Notas de diseño del dataset
 
 - **Formato JSONL**, un caso por línea: diffea limpio en git, se le pueden
@@ -68,3 +185,127 @@ tesis. El comando imprime al final una fila lista para pegar en esta tabla.
   origen es genuinamente indeterminable sin repreguntar.
 - **Registros informales, formales y con errores de tipeo**: el canal es
   WhatsApp, no un formulario.
+
+## v1.6 — la abstención (2026-08-20)
+
+Un vecino escribió "Gracias" por Telegram y el bot le abrió un ticket: *"Agujero
+en el techo del pasillo"*, urgencia alta, nada de eso mencionado en el mensaje.
+"No te dije gracias!" salió como un ticket de CONDUCTA titulado *"Agradecimiento
+no expresado"*.
+
+No era un problema de calidad del prompt sino de contrato: el esquema **obligaba
+a clasificar**. Frente a un texto sin ningún problema adentro, la única salida
+válida era inventar uno, y el modelo hacía lo que se le pedía. La respuesta es un
+campo nuevo, `es_reporte`, que le da al modelo una salida honesta, y el bot la
+respeta cortando antes de crear el ticket.
+
+Sobre los 302 casos del dataset no hay regresión: `origen` +1,4 pts y `urgencia`
++2,0 pts, `categoria` −1,0 pt (3 casos sobre 300, dentro del ruido de muestreo de
+un set de este tamaño) y `tipo` igual. Era lo esperable: todos los casos del
+dataset **son** reportes, así que el campo nuevo no cambia nada ahí — el valor
+está justamente en los mensajes que el dataset no tiene.
+
+Eso es también su limitación como medición: la abstención no está evaluada por el
+eval, porque el dataset no incluye ni un solo mensaje que no sea un reporte.
+Quedó verificada a mano contra el modelo real (se abstiene en "Gracias", "No te
+dije gracias!" y "hola todo bien?"; sigue registrando "se rompió el portón" y
+"buenas, hay olor a gas") y con tests de integración contra el mock. Medirla en
+serio pide una clase nueva de casos en el dataset — cortesías, preguntas,
+consultas administrativas— que es trabajo pendiente, no resuelto.
+
+`categoria` sigue abajo del 90 % de corte por lo ya anotado más arriba: falta la
+categoría `gas` y el dataset etiqueta a veces por síntoma y a veces por causa
+raíz. Es deuda de taxonomía, no de prompt.
+
+## v1.7 → v1.9 — la intención, y por qué hicieron falta cuatro variantes (2026-08-20)
+
+`es_reporte` sabía decir "esto no es un reporte" pero no *qué* era. Un vecino
+preguntó "¿cuál fue el último registro?" y recibió "no encontré un problema para
+registrar": cierto e inútil. `intencion` lo reemplaza —un solo campo, no un
+booleano más un enum, porque dos campos que contestan la misma pregunta se
+desincronizan— con cuatro valores: REPORTE, CONSULTA_ESTADO, AYUDA, OTRO. El bot
+rutea CONSULTA_ESTADO y AYUDA al mismo handler que atiende la palabra escrita
+exacta, así que la lista de reportes se arma en un solo lugar.
+
+### El error que importa no es simétrico
+
+v1.7 midió 81 % de intención y los 4 fallos fueron **todos en la misma
+dirección**: problemas reales redactados como pregunta ruteados a
+CONSULTA_ESTADO. Entre ellos "hay olor a gas en el pasillo, ¿es normal?". Ese es
+el error caro: un reclamo que nunca entra al sistema. El inverso —abrir el
+borrador de un ticket para una pregunta— lo cancela el vecino con un "no".
+
+v1.8 agregó la regla explícita con su razón: *si menciona un problema es REPORTE,
+aunque esté escrito como pregunta y aunque pregunte por algo ya reportado; si
+resulta repetido el dedup lo detecta y lo suma al existente, pero lo que no se
+registra no existe.* Eso lo llevó a 100 %.
+
+### Cuatro variantes, y la posición del bloque importa
+
+| variante | intención | tipo | origen | categoría | urgencia |
+|---|---|---|---|---|---|
+| v1.7 — 17 líneas, arriba | 81,0 % | 98,7 % | 96,3 % | 86,0 % | 57,7 % |
+| v1.8a — 11 líneas, arriba | 100,0 % | 98,0 % | 93,9 % | 87,0 % | 57,3 % |
+| v1.8b — 11 líneas, al final | 95,2 % | 99,0 % | 95,3 % | 86,3 % | 59,4 % |
+| **v1.9 — 7 líneas, arriba** | **100,0 %** | **98,7 %** | **96,3 %** | **87,6 %** | 59,0 % |
+
+Un bloque largo al principio del prompt empuja la escala de urgencia hacia abajo y
+la degrada; moverlo al final recupera tipo y origen pero pierde un caso de
+intención. Comprimirlo a 7 líneas y dejarlo arriba gana en las cuatro columnas a
+la vez. La lección es transferible: en este prompt, **cuánto ocupa una instrucción
+compite con las que vienen después**, así que agregar una tarea no es gratis
+aunque el texto agregado sea correcto.
+
+### Lo que este ejercicio destapó sobre la medición
+
+La urgencia parecía haber caído 8 puntos (65,5 % → 57,7 %). Antes de escribirlo
+como costo de la feature se corrió un **control**: el texto del prompt de v1.6
+contra el dataset actual. Dio 61,1 %, no 65,5 %. Con prompt idéntico.
+
+Entonces se corrió v1.9 **tres veces sin cambiar nada**:
+
+| corrida | intención | tipo | origen | categoría | urgencia |
+|---|---|---|---|---|---|
+| a | 100,0 % | 98,7 % | 96,3 % | 87,6 % | 59,0 % |
+| b | 100,0 % | 98,7 % | 95,6 % | 87,6 % | 61,8 % |
+| c | 100,0 % | 98,7 % | 95,9 % | 88,0 % | 59,0 % |
+| rango | 0,0 | 0,0 | 0,7 | 0,4 | **2,8** |
+
+Con `temperature: 0` la urgencia se mueve ~3 puntos entre corridas idénticas; las
+otras cuatro tareas se mueven menos de 1 punto. La urgencia es la única con cuatro
+clases ordinales y fronteras discutibles (MEDIA vs ALTA), así que es la más
+sensible al no-determinismo del proveedor —que existe a temperatura 0: batching y
+ruteo del modelo no garantizan reproducibilidad—.
+
+**Consecuencia para leer la tabla de arriba:** las diferencias de urgencia de ~3
+puntos entre versiones no son evidencia de nada. Varias de las "mejoras" que este
+changelog venía narrando (56,0 → 59,7 → 62,5 → 63,5) caen dentro de esa banda y
+no deberían leerse como efecto del prompt. Entre v1.6 y v1.9 la urgencia mide
+61,1 % (una corrida) contra 59,9 % ± 1,6 (tres corridas): indistinguible. El
+65,5 % registrado antes queda arriba de esa banda, así que no se puede descartar
+un costo real chico, pero tampoco establecerlo con una corrida por configuración.
+
+Cómo medir de acá en adelante: **tres corridas y reportar rango** para cualquier
+afirmación sobre urgencia. Para tipo, origen, categoría e intención una corrida
+alcanza.
+
+### La abstención ahora se mide
+
+El dataset tenía 302 casos y todos eran reportes, así que la abstención no se
+podía medir —era la limitación anotada en v1.6—. Se agregaron 20 casos con
+`expected.intencion` (7 CONSULTA_ESTADO, 3 AYUDA, 5 OTRO y **5 trampas**: problemas
+reales redactados como pregunta, que deben salir REPORTE). Las trampas son lo que
+impide aprobar la métrica abstiniéndose siempre.
+
+También se reetiquetó `amb007` ("hola"), que esperaba `categoria: otros` y `tipo:
+INFRAESTRUCTURA`. Esa etiqueta pedía exactamente lo que v1.6 vino a arreglar:
+convertir un saludo en un ticket de infraestructura. Ahora espera
+`intencion: OTRO`.
+
+`intencion` entra a los criterios de salida con el mismo umbral que `tipo` (95 %)
+porque condiciona todo lo que viene después: errarle hacia REPORTE mete basura
+inventada en la bandeja y errarle en la otra dirección pierde un reclamo.
+
+`categoria` sigue abajo del 90 % por lo ya anotado: falta la categoría `gas` y el
+dataset etiqueta a veces por síntoma y a veces por causa raíz. Deuda de taxonomía,
+no de prompt.

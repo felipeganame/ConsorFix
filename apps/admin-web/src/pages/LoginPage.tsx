@@ -1,21 +1,39 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { login, setToken } from '../lib/api.js';
+import { login, setRefreshToken, setToken } from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 
-const DEMO = [
-  { email: 'admin@consorciofix.dev', pwd: 'admin123', label: 'Administradora' },
-  { email: 'super@consorciofix.dev', pwd: 'super123', label: 'Super admin' },
-  { email: 'propi@consorciofix.dev', pwd: 'resi123', label: 'Propietaria 4A' },
-  { email: 'inqui@consorciofix.dev', pwd: 'resi123', label: 'Inquilina 4A' },
-];
+/**
+ * Atajos para las cuentas del seed. Sirven muchísimo para desarrollar y para la
+ * demo de la defensa, pero son credenciales reales del entorno de desarrollo:
+ * si el panel se publica, quedan en texto plano dentro del bundle de JS que
+ * cualquiera puede leer, apuntando a usuarios que el seed crea de verdad.
+ *
+ * `import.meta.env.DEV` es false en el build de producción, así que Vite elimina
+ * la lista entera del bundle en vez de solo esconder los botones.
+ */
+const DEMO = import.meta.env.DEV
+  ? [
+      { email: 'admin@consorciofix.dev', pwd: 'admin123', label: 'Administradora' },
+      { email: 'super@consorciofix.dev', pwd: 'super123', label: 'Super admin' },
+      { email: 'propi@consorciofix.dev', pwd: 'resi123', label: 'Propietaria 4A' },
+      { email: 'inqui@consorciofix.dev', pwd: 'resi123', label: 'Inquilina 4A' },
+    ]
+  : [];
+
+/**
+ * Rutas que solo puede usar el SUPER_ADMIN. Si el login viene con un `from` que
+ * apunta a una de ellas y quien entra no lo es, se lo lleva al inicio.
+ */
+const SOLO_SUPER_ADMIN = ['/administraciones'];
 
 export function LoginPage(): JSX.Element {
   const { setSession } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const [email, setEmail] = useState('admin@consorciofix.dev');
-  const [password, setPassword] = useState('admin123');
+  // Precargado solo en desarrollo: en producción el formulario arranca vacío.
+  const [email, setEmail] = useState(DEMO[0]?.email ?? '');
+  const [password, setPassword] = useState(DEMO[0]?.pwd ?? '');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -26,9 +44,19 @@ export function LoginPage(): JSX.Element {
     try {
       const r = await login(email.trim(), password);
       setToken(r.accessToken);
+      // El refresh se guardaba en ninguna parte: la respuesta lo trae y se
+      // descartaba, así que la sesión no se podía renovar y moría a los 15 min.
+      setRefreshToken(r.refreshToken);
       setSession(r.user);
+      // `from` es la ruta a la que el usuario quería entrar antes de que el
+      // guard lo mandara al login. Restaurarla es correcto cuando se vence la
+      // sesión y la persona vuelve a entrar, pero **cruza identidades**: si
+      // venías de /administraciones como super admin y ahora entrás como
+      // administradora, te devolvía a una página que tu rol no puede usar y lo
+      // primero que veías era el cartel rojo de "esta sección no te corresponde".
       const from = (loc.state as { from?: string } | null)?.from ?? '/';
-      nav(from, { replace: true });
+      const permitida = !SOLO_SUPER_ADMIN.some((ruta) => from.startsWith(ruta)) || r.user.kind === 'SUPER_ADMIN';
+      nav(permitida ? from : '/', { replace: true });
     } catch (err) {
       setError((err as Error).message || 'No se pudo iniciar sesión');
     } finally {
@@ -71,6 +99,7 @@ export function LoginPage(): JSX.Element {
         <button type="submit" className="btn primary" disabled={loading} style={{ width: '100%' }}>
           {loading ? 'Entrando…' : 'Entrar'}
         </button>
+        {DEMO.length > 0 && (
         <div className="mt-2" style={{ borderTop: '1px solid var(--cf-line)', paddingTop: 12 }}>
           <div className="uppercase" style={{ marginBottom: 6 }}>Cuentas demo</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -91,6 +120,7 @@ export function LoginPage(): JSX.Element {
             ))}
           </div>
         </div>
+        )}
       </form>
     </div>
   );

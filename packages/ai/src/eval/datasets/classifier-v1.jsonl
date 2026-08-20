@@ -185,7 +185,7 @@
 {"id": "amb004", "text": "Está todo sucio", "expected": {"categoria": "limpieza", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic", "tags": ["ambiguo"]}
 {"id": "amb005", "text": "El vecino hace ruido", "expected": {"categoria": "conducta", "origen": "UNIDAD", "tipo": "CONDUCTA"}, "source": "synthetic", "tags": ["ambiguo"]}
 {"id": "amb006", "text": "Se rompió el ascensor", "expected": {"categoria": "ascensor", "origen": "ESPACIO_COMUN", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic", "tags": ["ambiguo"]}
-{"id": "amb007", "text": "hola", "expected": {"categoria": "otros", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic", "tags": ["ambiguo", "sin-contenido"]}
+{"id": "amb007", "text": "hola", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["sin-contenido", "no-reporte"]}
 {"id": "amb008", "text": "necesito ayuda con un tema del departamento", "expected": {"categoria": "otros", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic", "tags": ["ambiguo", "sin-contenido"]}
 {"id": "mul001", "text": "Se cortó la luz del palier y además el ascensor quedó parado", "expected": {"origen": "ESPACIO_COMUN", "urgencia": "ALTA"}, "source": "synthetic", "tags": ["multi-problema"]}
 {"id": "mul002", "text": "Hay una pérdida de agua que está mojando el tablero eléctrico del pasillo", "expected": {"origen": "ESPACIO_COMUN", "urgencia": "CRITICA"}, "source": "synthetic", "tags": ["multi-problema"]}
@@ -300,3 +300,23 @@
 {"id": "uni053", "text": "El piso del balcón está flojo, se siente que se hunde al pisar", "expected": {"origen": "UNIDAD", "categoria": "seguridad", "urgencia": "CRITICA", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic"}
 {"id": "uni054", "text": "Se cortó la conexión de internet del edificio a mi unidad", "expected": {"origen": "UNIDAD", "categoria": "otros", "urgencia": "MEDIA", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic"}
 {"id": "uni055", "text": "Quiero avisar que cambié la cerradura de mi departamento", "expected": {"origen": "UNIDAD", "categoria": "otros", "urgencia": "BAJA", "tipo": "INFRAESTRUCTURA"}, "source": "synthetic"}
+{"id": "int001", "text": "¿cuál fue el último registro?", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int002", "text": "cómo viene lo del tanque?", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int003", "text": "alguna novedad de mis reclamos?", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int004", "text": "tengo algo pendiente todavía?", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int005", "text": "en qué quedó el reclamo del ascensor", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int006", "text": "ya lo arreglaron lo que reporté la semana pasada?", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int007", "text": "che me podés decir el estado de mis tickets", "expected": {"intencion": "CONSULTA_ESTADO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int008", "text": "qué podés hacer?", "expected": {"intencion": "AYUDA"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int009", "text": "cómo se usa esto", "expected": {"intencion": "AYUDA"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int010", "text": "para qué sirve este bot", "expected": {"intencion": "AYUDA"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int011", "text": "gracias!", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int012", "text": "buenas tardes, todo bien?", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int013", "text": "no te dije gracias", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int014", "text": "dale, listo", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int015", "text": "feliz año para toda la administración", "expected": {"intencion": "OTRO"}, "source": "synthetic", "tags": ["intencion", "no-reporte"]}
+{"id": "int016", "text": "se rompió el ascensor, alguna novedad?", "expected": {"intencion": "REPORTE"}, "source": "synthetic", "tags": ["intencion", "trampa-parece-pregunta"]}
+{"id": "int017", "text": "hola, sigue sin luz el palier, ya lo vieron?", "expected": {"intencion": "REPORTE"}, "source": "synthetic", "tags": ["intencion", "trampa-parece-pregunta"]}
+{"id": "int018", "text": "consulta: hay olor a gas en el pasillo, es normal?", "expected": {"intencion": "REPORTE"}, "source": "synthetic", "tags": ["intencion", "trampa-parece-pregunta"]}
+{"id": "int019", "text": "buenas! sabés si van a arreglar la filtración del techo del garage?", "expected": {"intencion": "REPORTE"}, "source": "synthetic", "tags": ["intencion", "trampa-parece-pregunta"]}
+{"id": "int020", "text": "perdón la molestia, se cayó la baranda de la escalera", "expected": {"intencion": "REPORTE"}, "source": "synthetic", "tags": ["intencion", "trampa-parece-pregunta"]}

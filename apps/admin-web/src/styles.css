@@ -305,6 +305,13 @@ label > span:first-child {
 
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: end; }
 .form-grid button { grid-column: -2 / -1; justify-self: end; }
+/* Ocupa la fila entera dentro de un .form-grid. Los títulos, los separadores de
+   sección, las ayudas y los campos largos (textarea) son celdas del grid como
+   cualquier otra, así que sin esto quedaban apretados al lado de los inputs y un
+   encabezado como "Su primer administrador" se leía como si fuera una etiqueta
+   más del formulario. */
+.form-grid .form-full { grid-column: 1 / -1; }
+.form-grid .form-full textarea { width: 100%; }
 
 .meta-list { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 0; }
 .meta-list dt { color: var(--cf-ink-3); font-size: 12px; }

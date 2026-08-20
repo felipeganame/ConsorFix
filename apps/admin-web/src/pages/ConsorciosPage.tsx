@@ -1,7 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
-import { createConsorcio, listConsorcios, type Consorcio } from '../lib/api.js';
+import {
+  avisarConsorciosCambiaron,
+  createConsorcio,
+  listConsorcios,
+  updateConsorcio,
+  type Consorcio,
+} from '../lib/api.js';
 
 const TIPO_LABEL: Record<Consorcio['tipo'], string> = {
   EDIFICIO: 'Edificio',
@@ -18,8 +24,24 @@ export function ConsorciosPage(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  // Edición en la propia fila: el caso real es corregir un nombre mal escrito o
+  // la dirección, no llenar un formulario entero de nuevo.
+  const [editando, setEditando] = useState<string | null>(null);
+  const [edNombre, setEdNombre] = useState('');
+  const [edDireccion, setEdDireccion] = useState('');
+
+  // `cargando` no es decorativo: sin él la tabla afirmaba "Sin consorcios
+  // cargados" mientras el pedido estaba en vuelo, y si fallaba mostraba el error
+  // Y ADEMÁS la afirmación de que no hay ninguno. Son tres estados distintos:
+  // no sé todavía, falló, o realmente no hay.
+  const [cargando, setCargando] = useState(true);
+
   function load() {
-    listConsorcios().then(setItems).catch((e) => setError(e.message));
+    setCargando(true);
+    listConsorcios()
+      .then(setItems)
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
   }
   useEffect(load, []);
 
@@ -33,6 +55,45 @@ export function ConsorciosPage(): JSX.Element {
       setDireccion('');
       setShowForm(false);
       load();
+      avisarConsorciosCambiaron();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function empezarEdicion(c: Consorcio) {
+    setEditando(c.id);
+    setEdNombre(c.nombre);
+    setEdDireccion(c.direccion ?? '');
+    setError(null);
+  }
+
+  async function guardarEdicion(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateConsorcio(id, { nombre: edNombre, direccion: edDireccion });
+      setEditando(null);
+      load();
+      avisarConsorciosCambiaron();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function alternarArchivado(c: Consorcio) {
+    setBusy(true);
+    setError(null);
+    try {
+      // Soft-delete: la fila se conserva porque los tickets viejos y su
+      // historial la referencian. Archivado se saca de circulación, no se borra.
+      await updateConsorcio(c.id, { archivado: !c.archivado });
+      load();
+      avisarConsorciosCambiaron();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -82,26 +143,60 @@ export function ConsorciosPage(): JSX.Element {
                 <th>Tipo</th>
                 <th>Dirección</th>
                 <th style={{ width: 100 }}>Estado</th>
+                <th style={{ width: 170 }} />
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted center">Sin consorcios cargados.</td>
+                  <td colSpan={5} className="muted center">
+                    {cargando ? 'Cargando…' : error ? 'No se pudo cargar la lista.' : 'Sin consorcios cargados.'}
+                  </td>
                 </tr>
               )}
               {items.map((c) => (
                 <tr key={c.id}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{c.nombre}</div>
-                    <div className="mono small muted">#{c.id.slice(0, 8)}</div>
+                    {editando === c.id ? (
+                      <input value={edNombre} onChange={(e) => setEdNombre(e.target.value)} maxLength={140} />
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 600 }}>{c.nombre}</div>
+                        <div className="mono small muted">#{c.id.slice(0, 8)}</div>
+                      </>
+                    )}
                   </td>
                   <td>{TIPO_LABEL[c.tipo]}</td>
-                  <td className="muted">{c.direccion ?? '—'}</td>
+                  <td className="muted">
+                    {editando === c.id ? (
+                      <input value={edDireccion} onChange={(e) => setEdDireccion(e.target.value)} maxLength={280} placeholder="Dirección" />
+                    ) : (
+                      (c.direccion ?? '—')
+                    )}
+                  </td>
                   <td>
                     {c.archivado
                       ? <span className="chip">Archivado</span>
                       : <span className="chip ok"><span className="dot" />Activo</span>}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      {editando === c.id ? (
+                        <>
+                          <button type="button" className="btn primary sm" disabled={busy || !edNombre} onClick={() => guardarEdicion(c.id)}>
+                            Guardar
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => setEditando(null)}>Cancelar</button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => empezarEdicion(c)}>Editar</button>
+                          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => alternarArchivado(c)}>
+                            {c.archivado ? 'Reactivar' : 'Archivar'}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

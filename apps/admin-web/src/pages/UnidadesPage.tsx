@@ -3,9 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { Icons } from '../components/Icons.js';
 import { Topbar } from '../components/Shell.js';
 import {
+  EVENTO_CONSORCIO_ACTIVO,
   createUnidad,
+  createUnidadesBulk,
   createVinculo,
   desvincular,
+  getConsorcioActivo,
+  setConsorcioActivo,
   listConsorcios,
   listResidentes,
   listUnidades,
@@ -22,10 +26,20 @@ export function UnidadesPage(): JSX.Element {
   const [consorcioId, setConsorcioId] = useState<string>('');
   const [unidades, setUnidades] = useState<Unidad[]>([]);
   const [etiqueta, setEtiqueta] = useState('');
+  // Alta masiva: es como se carga un edificio de verdad, de a 80 unidades.
+  const [modoLote, setModoLote] = useState(false);
+  const [lote, setLote] = useState('');
+  const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [selectedUnidad, setSelectedUnidad] = useState<Unidad | null>(null);
+
+  // Esta pantalla necesita UN consorcio: no existe "las unidades de todos". Así
+  // que respeta la elección global cuando hay una, y cuando la elección es
+  // "todos" cae al primero sin sobrescribirla —si no, entrar acá cambiaría el
+  // contexto del panel entero de callado—.
+  const [cayoAlPrimero, setCayoAlPrimero] = useState(false);
 
   useEffect(() => {
     listConsorcios()
@@ -34,19 +48,55 @@ export function UnidadesPage(): JSX.Element {
         if (!cs.length) return;
         const fromQuery = searchParams.get('consorcio');
         if (fromQuery && cs.some((c) => c.id === fromQuery)) {
+          // Un link directo manda, y además fija el contexto del panel.
           setConsorcioId(fromQuery);
-        } else if (!consorcioId) {
+          setCayoAlPrimero(false);
+          if (getConsorcioActivo() !== fromQuery) setConsorcioActivo(fromQuery);
+          return;
+        }
+        const activo = getConsorcioActivo();
+        if (activo && cs.some((c) => c.id === activo)) {
+          setConsorcioId(activo);
+          setCayoAlPrimero(false);
+        } else {
           setConsorcioId(cs[0]!.id);
+          setCayoAlPrimero(cs.length > 1);
         }
       })
       .catch((e) => setError(e.message));
   }, [searchParams]);
 
+  useEffect(() => {
+    const sincronizar = () => {
+      const activo = getConsorcioActivo();
+      if (activo) {
+        setConsorcioId(activo);
+        setCayoAlPrimero(false);
+        return;
+      }
+      // Cadena vacía es "todos", y es **falsy**: con un `if (activo)` a secas,
+      // elegir "Todos los consorcios" desde el sidebar no hacía nada acá y el
+      // cartel que explica por qué se ve un solo consorcio no aparecía. Quedaba
+      // el sidebar diciendo "todos" y esta pantalla mostrando uno, en silencio.
+      // Esta pantalla no puede listar las unidades de todos, así que se queda con
+      // el consorcio que está y lo dice.
+      setCayoAlPrimero(consorcios.length > 1);
+    };
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+  }, [consorcios.length]);
+
+  // Acá además hay un caso propio: sin consorcio elegido no hay nada que cargar,
+  // y eso tampoco es "sin unidades".
+  const [cargando, setCargando] = useState(false);
+
   function load() {
     if (!consorcioId) return;
+    setCargando(true);
     listUnidades(consorcioId)
       .then(setUnidades)
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
   }
   useEffect(load, [consorcioId]);
 
@@ -56,8 +106,27 @@ export function UnidadesPage(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      await createUnidad({ consorcio_id: consorcioId, etiqueta });
-      setEtiqueta('');
+      if (modoLote) {
+        // `POST /unidades/bulk` existía y ninguna pantalla lo usaba: cargar un
+        // edificio de 80 unidades se hacía de a una. Hace onConflictDoNothing,
+        // así que repetir una etiqueta ya cargada no rompe nada.
+        const etiquetas = lote
+          .split(/[\n,;]+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (etiquetas.length === 0) throw new Error('No hay etiquetas para crear.');
+        const creadas = await createUnidadesBulk({ consorcio_id: consorcioId, etiquetas });
+        const repetidas = etiquetas.length - creadas.length;
+        setInfo(
+          `Se crearon ${creadas.length} de ${etiquetas.length}.` +
+            (repetidas > 0 ? ` ${repetidas} ya existían y se dejaron como estaban.` : ''),
+        );
+        setLote('');
+      } else {
+        await createUnidad({ consorcio_id: consorcioId, etiqueta });
+        setEtiqueta('');
+        setInfo(null);
+      }
       setShowForm(false);
       load();
     } catch (err) {
@@ -83,7 +152,7 @@ export function UnidadesPage(): JSX.Element {
           <div className="filters-bar" style={{ padding: '0 0 12px', borderBottom: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="uppercase">Consorcio</span>
-              <select value={consorcioId} onChange={(e) => setConsorcioId(e.target.value)} style={{ minWidth: 240, height: 32 }}>
+              <select value={consorcioId} onChange={(e) => setConsorcioActivo(e.target.value)} style={{ minWidth: 240, height: 32 }}>
                 {consorcios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
@@ -91,14 +160,43 @@ export function UnidadesPage(): JSX.Element {
 
           {showForm && (
             <form className="card form-grid" onSubmit={onCreate}>
-              <label>
-                <span>Etiqueta</span>
-                <input value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} required maxLength={40} placeholder="Ej. 4A o Lote 12" />
-              </label>
-              <button type="submit" className="btn primary" disabled={busy || !consorcioId || !etiqueta}>Crear unidad</button>
+              <div className="segment">
+                <button type="button" className={!modoLote ? 'on' : ''} onClick={() => setModoLote(false)}>Una unidad</button>
+                <button type="button" className={modoLote ? 'on' : ''} onClick={() => setModoLote(true)}>Varias de una vez</button>
+              </div>
+              {modoLote ? (
+                <label>
+                  <span>Etiquetas (una por línea, o separadas por coma)</span>
+                  <textarea
+                    rows={6}
+                    value={lote}
+                    onChange={(e) => setLote(e.target.value)}
+                    placeholder={'1A\n1B\n2A\n2B'}
+                  />
+                </label>
+              ) : (
+                <label>
+                  <span>Etiqueta</span>
+                  <input value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} maxLength={40} placeholder="Ej. 4A o Lote 12" />
+                </label>
+              )}
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={busy || !consorcioId || (modoLote ? !lote.trim() : !etiqueta)}
+              >
+                {modoLote ? 'Crear las unidades' : 'Crear unidad'}
+              </button>
             </form>
           )}
 
+          {cayoAlPrimero && (
+            <div className="muted small">
+              Estás trabajando en “todos los consorcios”, y las unidades pertenecen a uno.
+              Mostrando el primero; elegí otro acá o en el selector de la izquierda.
+            </div>
+          )}
+          {info && <div className="chip ok">{info}</div>}
           {error && <div className="error">{error}</div>}
 
           <table className="grid">
@@ -111,7 +209,17 @@ export function UnidadesPage(): JSX.Element {
             </thead>
             <tbody>
               {unidades.length === 0 && (
-                <tr><td colSpan={3} className="muted center">Sin unidades en este consorcio.</td></tr>
+                <tr>
+                  <td colSpan={3} className="muted center">
+                    {!consorcioId
+                      ? 'Elegí un consorcio.'
+                      : cargando
+                        ? 'Cargando…'
+                        : error
+                          ? 'No se pudo cargar la lista.'
+                          : 'Sin unidades en este consorcio.'}
+                  </td>
+                </tr>
               )}
               {unidades.map((u) => (
                 <tr

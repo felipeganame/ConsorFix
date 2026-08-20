@@ -9,9 +9,11 @@ build/
 *.tsbuildinfo
 
 # Env
-.env
-.env.local
-.env.*.local
+# Cualquier variante del .env, no solo las que uno se acuerda de listar.
+# Antes esto era `.env` + `.env.local` + `.env.*.local`, así que un `.env.bak`
+# —lo primero que uno crea antes de editar a mano— quedaba fuera y las
+# credenciales terminaban listas para commitear.
+.env*
 !.env.example
 
 # Logs

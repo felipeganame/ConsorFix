@@ -27,6 +27,39 @@ export interface CreateTicketInput {
   creadoPorAdminId?: string;
 }
 
+/**
+ * Columnas del ticket que se exponen por HTTP.
+ *
+ * Existe para dejar afuera `embedding`: es un vector de 384 floats que sirve
+ * para el dedup del lado del servidor y que ningún cliente usa, pero
+ * `select()` lo traía igual y se serializaba como ~877 bytes por ticket. En un
+ * consorcio con tickets creados por el bot era casi la mitad del peso de la
+ * bandeja (medido: 47% de la respuesta).
+ */
+const COLUMNAS_PUBLICAS = {
+  id: ticket.id,
+  tenantId: ticket.tenantId,
+  consorcioId: ticket.consorcioId,
+  unidadId: ticket.unidadId,
+  unidadReportadaId: ticket.unidadReportadaId,
+  reportanteId: ticket.reportanteId,
+  tipo: ticket.tipo,
+  origen: ticket.origen,
+  urgencia: ticket.urgencia,
+  estado: ticket.estado,
+  titulo: ticket.titulo,
+  descripcionNormalizada: ticket.descripcionNormalizada,
+  clientGeneratedId: ticket.clientGeneratedId,
+  shortCode: ticket.shortCode,
+  votosCount: ticket.votosCount,
+  categoriaId: ticket.categoriaId,
+  duplicadoDeId: ticket.duplicadoDeId,
+  createdAt: ticket.createdAt,
+  validatedAt: ticket.validatedAt,
+  solucionadoAt: ticket.solucionadoAt,
+  updatedAt: ticket.updatedAt,
+} as const;
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -135,7 +168,12 @@ export class TicketsService {
       const conds = [eq(ticket.tenantId, tenantId)];
       if (opts.consorcioId) conds.push(eq(ticket.consorcioId, opts.consorcioId));
       if (opts.estado) conds.push(eq(ticket.estado, opts.estado));
-      return tx.select().from(ticket).where(and(...conds)).orderBy(desc(ticket.createdAt)).limit(200);
+      return tx
+        .select(COLUMNAS_PUBLICAS)
+        .from(ticket)
+        .where(and(...conds))
+        .orderBy(desc(ticket.createdAt))
+        .limit(200);
     });
   }
 
@@ -154,11 +192,44 @@ export class TicketsService {
    */
   async byId(tenantId: string, id: string, viewer: TicketViewer) {
     return withTenant(tenantId, async (tx) => {
-      const rows = await tx.select().from(ticket).where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id))).limit(1);
+      const rows = await tx
+        .select(COLUMNAS_PUBLICAS)
+        .from(ticket)
+        .where(and(eq(ticket.tenantId, tenantId), eq(ticket.id, id)))
+        .limit(1);
       const t = rows[0];
       if (!t) throw new NotFoundException('ticket not found');
 
-      if (viewer.kind !== 'RESIDENTE') return t;
+      if (viewer.kind !== 'RESIDENTE') {
+        // La sugerencia de la IA va SOLO al admin, y solo acá: es lo que la
+        // regla 4 le pide decidir, y hasta ahora el panel no la recibía nunca
+        // —mostraba una confianza fija del 85% y derivaba la "categoría
+        // sugerida" de los campos ya confirmados, o sea de su propia decisión.
+        // Al residente no se le expone: en CONDUCTA el `sugerido` contiene el
+        // texto crudo del denunciante y la unidad que el modelo dedujo.
+        const ia = (
+          await tx
+            .select({
+              sugerido: clasificacionIa.sugerido,
+              corregidoPorAdmin: clasificacionIa.corregidoPorAdmin,
+              confianza: clasificacionIa.confianza,
+              modelo: clasificacionIa.modelo,
+              promptVersion: clasificacionIa.promptVersion,
+              tokensIn: clasificacionIa.tokensIn,
+              tokensOut: clasificacionIa.tokensOut,
+              costoUsd: clasificacionIa.costoUsd,
+              latenciaMs: clasificacionIa.latenciaMs,
+              cacheHit: clasificacionIa.cacheHit,
+            })
+            .from(clasificacionIa)
+            .where(and(eq(clasificacionIa.tenantId, tenantId), eq(clasificacionIa.ticketId, id)))
+            .limit(1)
+        )[0];
+        // `null` explícito y no ausencia: un ticket cargado a mano por el admin
+        // no pasó por el clasificador, y el panel tiene que poder distinguirlo
+        // de "todavía no llegó".
+        return { ...t, clasificacion: ia ?? null };
+      }
 
       const ctx = await loadResidenteCtx(tx, tenantId, viewer.residenteId);
       const visible = canResidenteSeeTicket(ctx, {
@@ -229,7 +300,22 @@ export class TicketsService {
         transicion: e.transicion,
         estadoAnterior: e.estadoAnterior,
         estadoNuevo: e.estadoNuevo,
-        ...(esAdmin || !esConducta ? { nota: e.nota } : {}),
+        // La nota es SOLO del admin, en todo tipo de ticket.
+        //
+        // Antes se ocultaba nada más en CONDUCTA, así que en un ticket de
+        // infraestructura un residente que pidiera el historial leía la nota
+        // interna. El panel la pide bajo el rótulo "NOTA INTERNA — contexto para
+        // el equipo": si el vecino puede leerla, el rótulo miente, y quien la
+        // escribe cree que está en privado. Es un campo de texto libre, así que
+        // no se puede confiar en que quien lo llena se autocensure.
+        //
+        // Si algún día hace falta un comentario que el vecino SÍ vea, va en otro
+        // campo con su propio rótulo. Un mismo texto libre no puede servir para
+        // las dos cosas.
+        ...(esAdmin ? { nota: e.nota } : {}),
+        // `autorTipo: 'RESIDENTE'` en el evento de creación le confirma al
+        // acusado que lo denunció un vecino y no la administración, así que en
+        // conducta sigue oculto.
         ...(esAdmin || !esConducta ? { autorTipo: e.autorTipo } : {}),
         ...(esAdmin ? { autorId: e.autorId } : {}),
         at: e.at,
@@ -386,7 +472,8 @@ export class TicketsService {
         ticketId: updated.id,
         shortCode: updated.id.slice(0, 8),
         to,
-        nota: opts.nota ?? null,
+        // La nota NO viaja: es interna del admin. Iba en el cuerpo del mensaje
+        // que recibe el vecino —y todos los que votaron el ticket—.
         reportanteId: updated.reportanteId,
       });
     });

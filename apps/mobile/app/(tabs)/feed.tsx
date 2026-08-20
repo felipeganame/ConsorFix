@@ -164,6 +164,20 @@ export default function FeedScreen(): JSX.Element {
             </View>
             <Text style={styles.cardTitle}>{item.titulo}</Text>
             <Text style={styles.cardDesc} numberOfLines={2}>{item.descripcionNormalizada}</Text>
+            {/* RF-D05/E02/G10: el costo confirmado del arreglo. Es la propuesta
+                de valor del producto —el vecino ve en qué se gastó la plata— y
+                la app no lo mostraba en ninguna pantalla. `null` significa que
+                no corresponde verlo (unidad ajena o conducta), así que no se
+                renderiza nada; una lista vacía es "visible, sin costo todavía". */}
+            {item.costosConfirmados && item.costosConfirmados.length > 0 && (
+              <View style={styles.costos}>
+                {item.costosConfirmados.map((c) => (
+                  <Text key={c.moneda} style={styles.costoText}>
+                    Costo del arreglo: {c.moneda} {c.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </Text>
+                ))}
+              </View>
+            )}
             <View style={styles.cardFooter}>
               <Text style={styles.cardMeta}>
                 {ESTADO_LABEL[item.estado]} · {relativeTime(item.createdAt)}
@@ -214,6 +228,14 @@ const styles = StyleSheet.create({
   cardChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   cardTitle: { fontSize: 15.5, fontWeight: '600', color: COLORS.ink, letterSpacing: -0.2 },
   cardDesc: { color: COLORS.ink3, fontSize: 13, lineHeight: 18 },
+  costos: {
+    backgroundColor: COLORS.bg,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    marginBottom: 8,
+  },
+  costoText: { color: COLORS.ink2, fontSize: 12.5, fontWeight: '600' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardMeta: { color: COLORS.ink3, fontSize: 11.5 },
   votes: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },

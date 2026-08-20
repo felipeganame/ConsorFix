@@ -56,7 +56,13 @@ export class ConductaController {
     const t = tid(req);
     const created = await withTenant(t, async (tx) => {
       const tk = (await tx
-        .select({ id: ticket.id, unidadId: ticket.unidadId, tipo: ticket.tipo })
+        .select({
+          id: ticket.id,
+          unidadId: ticket.unidadId,
+          unidadReportadaId: ticket.unidadReportadaId,
+          tipo: ticket.tipo,
+          estado: ticket.estado,
+        })
         .from(ticket)
         .where(and(eq(ticket.tenantId, t), eq(ticket.id, ticketId)))
         .limit(1))[0];
@@ -64,14 +70,23 @@ export class ConductaController {
       if (tk.tipo !== 'CONDUCTA') {
         throw new ForbiddenException('registro_conducta solo aplica a tickets tipo CONDUCTA');
       }
-      if (!tk.unidadId) {
-        throw new ForbiddenException('ticket de conducta sin unidad reportada');
+      // La sanción va contra la unidad ACUSADA, que desde la migración 0004 vive
+      // en su propia columna. Acá se leía `unidad_id`, que en un ticket creado
+      // por el bot es la unidad del DENUNCIANTE —el bot imputa la unidad de quien
+      // escribe—, así que un aviso o una sanción quedaban registrados contra el
+      // vecino que hizo la denuncia y le ensuciaban su propio historial de
+      // convivencia (RF-F03). La 0004 hizo el backfill de los tickets viejos, así
+      // que exigir la columna nueva no deja ninguno afuera.
+      if (!tk.unidadReportadaId) {
+        throw new ForbiddenException(
+          'el ticket todavía no tiene unidad señalada: validalo indicando a qué unidad corresponde',
+        );
       }
       return (await tx
         .insert(registroConducta)
         .values({
           tenantId: t,
-          unidadId: tk.unidadId,
+          unidadId: tk.unidadReportadaId,
           ticketId,
           resultado: dto.resultado,
           detalle: dto.detalle ?? null,

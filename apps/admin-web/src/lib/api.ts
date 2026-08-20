@@ -9,8 +9,10 @@ export interface SessionUser {
 }
 
 const TOKEN_KEY = 'cfx.token';
+const REFRESH_KEY = 'cfx.refresh';
 const USER_KEY = 'cfx.user';
 const TENANT_KEY = 'cfx.tenant';
+const CONSORCIO_KEY = 'cfx.consorcio';
 
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -18,10 +20,15 @@ export function getToken(): string | null {
 export function setToken(t: string): void {
   sessionStorage.setItem(TOKEN_KEY, t);
 }
+export function setRefreshToken(t: string): void {
+  sessionStorage.setItem(REFRESH_KEY, t);
+}
 export function clearSession(): void {
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
   sessionStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(TENANT_KEY);
+  sessionStorage.removeItem(CONSORCIO_KEY);
 }
 export function getUser(): SessionUser | null {
   const raw = sessionStorage.getItem(USER_KEY);
@@ -35,6 +42,9 @@ export function getTenantOverride(): string | null {
 }
 export function setTenantOverride(t: string): void {
   sessionStorage.setItem(TENANT_KEY, t);
+  // El consorcio elegido pertenecía a la administración anterior: mantenerlo
+  // dejaría a las pantallas filtrando por un id que la nueva no puede ver.
+  sessionStorage.removeItem(CONSORCIO_KEY);
 }
 
 export class ApiError extends Error {
@@ -43,7 +53,48 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Renueva el access token con el refresh, una sola vez a la vez.
+ *
+ * El login venía guardando solo el access token y el refresh se descartaba,
+ * aunque la respuesta lo trae y `POST /auth/refresh` existe desde el principio.
+ * Resultado: la sesión se moría en seco a los 15 minutos y la pantalla en la que
+ * estabas mostraba "invalid or expired token" en rojo.
+ *
+ * La promesa se comparte a propósito: si cinco pantallas piden datos al mismo
+ * tiempo y las cinco reciben 401, tiene que haber UN refresh y no cinco —el
+ * segundo usaría un refresh token que el primero ya rotó, y ahí sí se cae la
+ * sesión de verdad.
+ */
+let refreshEnCurso: Promise<boolean> | null = null;
+
+async function renovarToken(): Promise<boolean> {
+  const refresh = sessionStorage.getItem(REFRESH_KEY);
+  if (!refresh) return false;
+  refreshEnCurso ??= (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      if (!res.ok) return false;
+      const j = (await res.json()) as { accessToken?: string; refreshToken?: string };
+      if (!j.accessToken) return false;
+      setToken(j.accessToken);
+      // El endpoint rota el refresh: guardar el nuevo o el próximo intento falla.
+      if (j.refreshToken) setRefreshToken(j.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshEnCurso = null;
+    }
+  })();
+  return refreshEnCurso;
+}
+
+async function pedir(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (!headers.has('content-type') && init?.body) headers.set('content-type', 'application/json');
   const token = getToken();
@@ -51,7 +102,29 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const user = getUser();
   const tenantOverride = getTenantOverride();
   if (user?.kind === 'SUPER_ADMIN' && tenantOverride) headers.set('x-tenant-id', tenantOverride);
-  const res = await fetch(`/api${path}`, { ...init, headers });
+  return fetch(`/api${path}`, { ...init, headers });
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  let res = await pedir(path, init);
+
+  // Un 401 casi siempre es el access token vencido, no una credencial mala: se
+  // renueva y se reintenta una vez. `/auth/*` se excluye para no entrar en bucle.
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    if (await renovarToken()) {
+      res = await pedir(path, init);
+    } else {
+      // El refresh también venció: la sesión terminó de verdad. Se limpia y se
+      // manda al login en vez de dejar al usuario mirando un error crudo en una
+      // pantalla que ya no puede cargar nada.
+      clearSession();
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+      throw new ApiError(401, 'Tu sesión expiró. Volvé a entrar.');
+    }
+  }
+
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -134,10 +207,41 @@ export interface Ticket {
   descripcionNormalizada: string;
   votosCount: number;
   categoriaId: string | null;
+  /** Unidad del vecino señalado; solo en CONDUCTA (RF-F01, migración 0004). */
+  unidadReportadaId: string | null;
   createdAt: string;
   validatedAt: string | null;
   solucionadoAt: string | null;
   updatedAt: string;
+  /** Solo presente en el detalle (GET /tickets/:id) y solo para admins. */
+  clasificacion?: ClasificacionIa | null;
+}
+
+/**
+ * Sugerencia del clasificador tal como quedó persistida. `null` cuando el
+ * ticket no pasó por la IA (lo cargó un admin a mano), que es distinto de
+ * "todavía no llegó".
+ */
+export interface ClasificacionIa {
+  sugerido: {
+    tipo?: TicketTipo;
+    origen?: TicketOrigen;
+    titulo?: string;
+    urgencia?: TicketUrgencia;
+    categoria?: string;
+    descripcion_normalizada?: string;
+    ubicacion?: string;
+    unidad_reportada_texto?: string;
+  };
+  corregidoPorAdmin: Record<string, unknown> | null;
+  confianza: number | null;
+  modelo: string;
+  promptVersion: string;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  costoUsd: string | null;
+  latenciaMs: number | null;
+  cacheHit: boolean;
 }
 
 export function listConsorcios(): Promise<Consorcio[]> {
@@ -149,6 +253,82 @@ export function createConsorcio(body: {
   direccion?: string;
 }): Promise<Consorcio> {
   return apiFetch<Consorcio>('/consorcios', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/**
+ * Aviso de que la lista de consorcios cambió.
+ *
+ * El Shell la carga una vez al montar para el selector de arriba, así que al
+ * crear el primer consorcio la barra seguía diciendo "Sin consorcios" hasta que
+ * recargabas la página. Un evento del navegador alcanza: es una sola lista, la
+ * cambian dos pantallas y no justifica traer un manejador de estado global.
+ */
+export const EVENTO_CONSORCIOS = 'cfx:consorcios-cambiaron';
+
+export function avisarConsorciosCambiaron(): void {
+  window.dispatchEvent(new Event(EVENTO_CONSORCIOS));
+}
+
+/**
+ * Consorcio con el que está trabajando el admin, compartido por todas las
+ * pantallas.
+ *
+ * Antes cada pantalla arrancaba con su propio filtro en "Todos", así que elegir
+ * un consorcio en la Bandeja y pasar a Resumen te devolvía a todos. Y el control
+ * del sidebar no seleccionaba nada: navegaba a las unidades de ese consorcio.
+ *
+ * Cadena vacía significa "todos" y es un valor válido, así que se distingue de
+ * `null` (nunca se eligió). Vive en `sessionStorage` como el token y la
+ * administración elegida: se va al cerrar sesión y no sobrevive a cerrar la
+ * pestaña, que para un panel de trabajo es lo que se espera.
+ */
+export const EVENTO_CONSORCIO_ACTIVO = 'cfx:consorcio-activo';
+
+export function getConsorcioActivo(): string | null {
+  return sessionStorage.getItem(CONSORCIO_KEY);
+}
+
+export function setConsorcioActivo(id: string): void {
+  sessionStorage.setItem(CONSORCIO_KEY, id);
+  window.dispatchEvent(new Event(EVENTO_CONSORCIO_ACTIVO));
+}
+
+/**
+ * Olvida la elección. Se llama cuando el consorcio guardado ya no existe (lo
+ * archivaron, o el super admin cambió de administración y ese id pertenece a la
+ * anterior): dejarlo puesto haría que las pantallas filtren por un id fantasma y
+ * muestren vacío sin explicar por qué.
+ */
+export function limpiarConsorcioActivo(): void {
+  sessionStorage.removeItem(CONSORCIO_KEY);
+  window.dispatchEvent(new Event(EVENTO_CONSORCIO_ACTIVO));
+}
+
+export function getConsorcio(id: string): Promise<Consorcio> {
+  return apiFetch<Consorcio>(`/consorcios/${id}`);
+}
+
+/**
+ * Editar o archivar un consorcio. Archivar es un soft-delete: la fila se
+ * conserva porque los tickets viejos y su historial la referencian.
+ *
+ * El endpoint existía y ninguna pantalla lo llamaba: la lista mostraba el estado
+ * "Archivado" sin ninguna forma de llegar a ese estado, y un consorcio cargado
+ * con el nombre mal escrito no se podía corregir.
+ */
+export function updateConsorcio(
+  id: string,
+  body: { nombre?: string; direccion?: string; archivado?: boolean },
+): Promise<Consorcio> {
+  return apiFetch<Consorcio>(`/consorcios/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+/** Alta de muchas unidades de una vez: así se carga un edificio de verdad. */
+export function createUnidadesBulk(body: {
+  consorcio_id: string;
+  etiquetas: string[];
+}): Promise<Unidad[]> {
+  return apiFetch<Unidad[]>('/unidades/bulk', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function listUnidades(consorcioId?: string): Promise<Unidad[]> {
@@ -201,9 +381,74 @@ export function listTickets(filters: {
 export function getTicket(id: string): Promise<Ticket> {
   return apiFetch<Ticket>(`/tickets/${id}`);
 }
+
+/**
+ * Carga manual de un ticket por el admin: alguien reporta por teléfono, en
+ * persona o en la reunión de consorcio. Es el criterio de salida de la Fase 1.
+ */
+export function createTicket(body: {
+  consorcio_id: string;
+  unidad_id: string | null;
+  tipo: TicketTipo;
+  urgencia: TicketUrgencia;
+  origen_sugerido?: TicketOrigen;
+  titulo: string;
+  descripcion: string;
+}): Promise<Ticket> {
+  return apiFetch<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/**
+ * Un evento del historial tal como lo devuelve la API. `nota`, `autorTipo` y
+ * `autorId` son opcionales a propósito: el service los omite según quién
+ * pregunta (en CONDUCTA un residente no recibe ni la nota ni el autor), así que
+ * el tipo tiene que admitir su ausencia y no fingir que siempre llegan.
+ */
+export interface HistorialEvento {
+  transicion: string;
+  estadoAnterior: TicketEstado | null;
+  estadoNuevo: TicketEstado | null;
+  nota?: string | null;
+  autorTipo?: string | null;
+  autorId?: string;
+  at: string;
+}
+
+/** Historial auditable del ticket (RF-D02). */
+export function getHistorial(id: string): Promise<HistorialEvento[]> {
+  return apiFetch<HistorialEvento[]>(`/tickets/${id}/historial`);
+}
+
+export interface Categoria {
+  id: string;
+  tenantId: string;
+  consorcioId: string;
+  nombre: string;
+  esConducta: boolean;
+  createdAt: string;
+}
+
+export function listCategorias(consorcioId?: string): Promise<Categoria[]> {
+  const q = consorcioId ? `?consorcio_id=${encodeURIComponent(consorcioId)}` : '';
+  return apiFetch<Categoria[]>(`/categorias${q}`);
+}
+export function createCategoria(body: {
+  consorcio_id: string;
+  nombre: string;
+  es_conducta?: boolean;
+}): Promise<Categoria> {
+  return apiFetch<Categoria>('/categorias', { method: 'POST', body: JSON.stringify(body) });
+}
 export function transitionTicket(
   id: string,
-  body: { to: TicketEstado; origen?: TicketOrigen; categoria_id?: string; nota?: string },
+  body: {
+    to: TicketEstado;
+    origen?: TicketOrigen;
+    categoria_id?: string;
+    nota?: string;
+    /** Obligatorio para validar una CONDUCTA (RF-F01). */
+    unidad_reportada_id?: string;
+  },
 ): Promise<Ticket> {
   return apiFetch<Ticket>(`/tickets/${id}/transitions`, {
     method: 'POST',
@@ -251,6 +496,20 @@ export interface MetricsOverview {
   byUrgencia: Array<{ urgencia: TicketUrgencia; count: number }>;
   avgResolutionMinutes: number | string | null;
   costosConfirmados: Array<{ moneda: string; total: number }>;
+  /**
+   * Telemetría del clasificador (RF-C07). La API la venía calculando y ninguna
+   * pantalla la declaraba, así que el dato existía y no se veía. `corregidosPorAdmin`
+   * es la métrica que importa para la tesis: cuántas veces la IA se equivocó.
+   */
+  costoIa: {
+    ticketsClasificados: number;
+    tokensIn: number;
+    tokensOut: number;
+    totalUsd: number;
+    promedioPorTicketUsd: number;
+    latenciaP50Ms: number;
+    corregidosPorAdmin: number;
+  };
 }
 
 export function getMetrics(consorcioId?: string): Promise<MetricsOverview> {
@@ -270,11 +529,17 @@ export interface AuditEntry {
   at: string;
 }
 
-export function listAudit(q: { entidad?: string; accion?: string; days?: number } = {}): Promise<AuditEntry[]> {
+export function listAudit(
+  q: { entidad?: string; accion?: string; days?: number; limit?: number } = {},
+): Promise<AuditEntry[]> {
   const params = new URLSearchParams();
   if (q.entidad) params.set('entidad', q.entidad);
   if (q.accion) params.set('accion', q.accion);
   if (q.days) params.set('days', String(q.days));
+  // La API topea en 100 por defecto (máximo 500). El límite viaja explícito para
+  // que la pantalla sepa si lo que muestra está recortado y pueda decirlo: una
+  // bitácora que corta en silencio se lee como "no pasó nada más".
+  if (q.limit) params.set('limit', String(q.limit));
   const qs = params.toString();
   return apiFetch<AuditEntry[]>(`/admin/audit-log${qs ? `?${qs}` : ''}`);
 }
@@ -310,4 +575,119 @@ export interface SimilarTicket {
 }
 export function listSimilar(ticketId: string): Promise<SimilarTicket[]> {
   return apiFetch<SimilarTicket[]>(`/tickets/${ticketId}/similar`);
+}
+
+// ── Importación masiva de residentes (RF-A05) ────────────────────────────────
+
+export interface FilaError {
+  fila: number;
+  motivo: string;
+  datos: Record<string, string>;
+}
+
+export interface ResultadoImport {
+  totalFilas: number;
+  validas: number;
+  insertadas: number;
+  vinculosCreados: number;
+  vinculosYaExistentes: number;
+  reusados: Array<{ fila: number; telefono: string; nombreEnArchivo: string; nombreExistente: string }>;
+  errores: FilaError[];
+  dryRun: boolean;
+  unidadesCreadas: string[];
+}
+
+/**
+ * El CSV va como texto en el body, no como multipart: el panel lo lee con
+ * FileReader y así la API se ahorra multer. Con `dry_run` devuelve el mismo
+ * informe sin escribir nada, que es cómo el admin revisa una planilla de 200
+ * filas antes de aplicarla.
+ */
+export function importarResidentes(body: {
+  consorcio_id: string;
+  csv: string;
+  dry_run?: boolean;
+  crear_unidades?: boolean;
+}): Promise<ResultadoImport> {
+  return apiFetch<ResultadoImport>('/import/residentes', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Administraciones (RF-A01, solo SUPER_ADMIN) ───────────────────────────────
+
+export interface Tenant {
+  id: string;
+  nombre: string;
+  plan: string;
+  createdAt: string;
+}
+
+export function listTenants(): Promise<Tenant[]> {
+  return apiFetch<Tenant[]>('/tenants');
+}
+
+/**
+ * La administración se crea junto con su primer admin: un tenant sin nadie que
+ * pueda entrar no sirve, y hacerlo en dos pasos deja una ventana en la que la
+ * administración existe sin dueño.
+ */
+export function createTenant(body: {
+  nombre: string;
+  plan?: 'basico' | 'pro';
+  admin: { nombre: string; email: string; password: string };
+}): Promise<{ id: string; nombre: string; admin: { id: string; email: string } }> {
+  return apiFetch('/tenants', { method: 'POST', body: JSON.stringify(body) });
+}
+
+// ── Convivencia: avisos y sanciones (RF-F03) ─────────────────────────────────
+
+export type ResultadoConducta = 'DESCARTADO' | 'AVISO' | 'SANCION';
+
+export interface RegistroConducta {
+  id: string;
+  tenantId: string;
+  unidadId: string;
+  ticketId: string;
+  resultado: ResultadoConducta;
+  detalle: string | null;
+  createdAt: string;
+}
+
+export function listRegistrosConducta(ticketId: string): Promise<RegistroConducta[]> {
+  return apiFetch<RegistroConducta[]>(`/tickets/${ticketId}/registros-conducta`);
+}
+
+/**
+ * Registra el resultado del reporte de conducta. Queda asentado contra la unidad
+ * SEÑALADA en el ticket, no contra la del denunciante, y va a la bitácora.
+ */
+export function createRegistroConducta(
+  ticketId: string,
+  body: { resultado: ResultadoConducta; detalle?: string },
+): Promise<RegistroConducta> {
+  return apiFetch<RegistroConducta>(`/tickets/${ticketId}/registros-conducta`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export interface EventoConvivencia {
+  id: string;
+  ticketId: string;
+  resultado: ResultadoConducta;
+  detalle: string | null;
+  createdAt: string;
+  ticketTitulo: string;
+  ticketEstado: TicketEstado;
+}
+
+/**
+ * Historial de convivencia de una unidad: todos los avisos y sanciones que se le
+ * registraron, a través de cualquier ticket de conducta. Es lo que permite ver
+ * que es la cuarta vez, no la primera. Solo lo consulta la administración (P5).
+ */
+export function historialConducta(unidadId: string): Promise<EventoConvivencia[]> {
+  return apiFetch<EventoConvivencia[]>(`/unidades/${unidadId}/historial-conducta`);
 }

@@ -93,6 +93,17 @@ export interface FeedTicket {
   votosCount: number;
   reportanteId: string | null;
   voted: boolean;
+  /**
+   * Costos confirmados del arreglo, por moneda (RF-D05/E02/G10).
+   *
+   * Tres estados distintos y los tres significan algo:
+   *   `null` → no corresponde mostrarlo (unidad ajena o conducta);
+   *   `[]`   → es visible pero todavía no se cargó ningún costo;
+   *   con datos → el gasto confirmado.
+   * La transparencia de costos es la propuesta de valor del producto y la app
+   * no mostraba este campo en ninguna pantalla.
+   */
+  costosConfirmados: Array<{ moneda: string; total: number }> | null;
   createdAt: string;
   validatedAt: string | null;
   solucionadoAt: string | null;
@@ -171,4 +182,26 @@ export function registerPushToken(token: string): Promise<{ ok: boolean }> {
     method: 'POST',
     body: JSON.stringify({ token }),
   });
+}
+
+/**
+ * El propietario da de alta a su inquilino desde la app (CLAUDE.md: vínculo
+ * unidad-residente). Crea el residente y el vínculo INQUILINO en un solo paso.
+ *
+ * La API verifica que quien invita sea PROPIETARIO activo de esa unidad: un
+ * inquilino no puede invitar, y un propietario no puede invitar a una unidad que
+ * no es suya. El endpoint existía y ninguna pantalla lo llamaba.
+ */
+export interface InviteInquilinoBody {
+  unidad_id: string;
+  nombre: string;
+  telefono_e164: string;
+  email: string;
+  password: string;
+}
+
+export function inviteInquilino(
+  body: InviteInquilinoBody,
+): Promise<{ id: string; email: string; vinculo: 'INQUILINO'; unidad_id: string }> {
+  return apiFetch('/residentes/invite-inquilino', { method: 'POST', body: JSON.stringify(body) });
 }

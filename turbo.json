@@ -12,6 +12,7 @@
     "JWT_ACCESS_TTL",
     "JWT_REFRESH_TTL",
     "REDIS_URL",
+    "ADMIN_WEB_PORT",
     "API_PORT",
     "API_HOST",
     "API_URL",

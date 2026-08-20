@@ -9,6 +9,42 @@ import { ClassifierOutput } from './schemas.js';
 export class MockClassifier implements IClassifier {
   async classify(text: string, opts: { promptVersion: string }) {
     const lower = text.toLowerCase();
+
+    // El modelo real distingue qué quiere el vecino (`intencion`) y puede no
+    // clasificar nada. El mock imita eso, si no esos caminos del bot no se
+    // podrían testear sin gastar una llamada paga. Los patrones son deliberadamente
+    // angostos —texto enteramente social, o una pregunta explícita por reportes
+    // propios—: todos los casos del dataset de evaluación traen un problema
+    // adentro, así que la baseline no se mueve.
+    const soloSocial =
+      /^[\s\p{P}]*(?:(?:hola|buenas|buen\s+d[íi]a|buenas\s+(?:tardes|noches)|gracias|no\s+te\s+dije\s+gracias|chau|saludos|todo\s+bien|c[óo]mo\s+(?:va|and[áa]s|est[áa]s))[\s\p{P}]*)+$/iu.test(
+        lower.trim(),
+      );
+    // Pregunta por reportes propios: pide un verbo/sustantivo de seguimiento y
+    // que NO haya nada roto en la frase, así "se rompió el ascensor, alguna
+    // novedad?" sigue siendo un reporte.
+    const preguntaEstado =
+      /\?|^(?:como|cómo|que|qué|cual|cuál|hay|tengo|ya)\b/i.test(text.trim()) &&
+      /\b(?:reporte|reportes|reclamo|reclamos|registro|registros|ticket|novedad|novedades|pendiente|pendientes|estado)\b/i.test(
+        lower,
+      ) &&
+      !/\b(?:romp|rot[oa]|perd|fuga|filtra|no funciona|no anda|sin luz|sin agua|olor|ruido|sucio|basura)/i.test(lower);
+
+    const intencion = soloSocial ? 'OTRO' : preguntaEstado ? 'CONSULTA_ESTADO' : null;
+    if (intencion) {
+      return ClassifierOutput.parse({
+        intencion,
+        titulo: 'Sin reporte',
+        descripcion_normalizada: text.trim() || '(vacío)',
+        tipo: 'INFRAESTRUCTURA',
+        categoria: 'otros',
+        origen: 'UNIDAD',
+        urgencia: 'BAJA',
+        confianza: 0.9,
+        modelo: 'mock-classifier@0.0.1',
+        prompt_version: opts.promptVersion,
+      });
+    }
     const urgencia =
       /fuego|gas|incendio|inundaci/.test(lower)
         ? 'CRITICA'

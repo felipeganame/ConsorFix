@@ -13,8 +13,10 @@ interface NotifyArgs {
   ticketId: string;
   shortCode: string;
   to: TicketState;
-  nota: string | null;
   reportanteId: string | null;
+  // `nota` se quitó a propósito: era la nota INTERNA del admin y terminaba en el
+  // mensaje que recibe el vecino. Sacarla del contrato hace que el compilador
+  // señale a cualquiera que intente volver a pasarla.
 }
 
 /**
@@ -260,7 +262,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       .from(residente)
       .where(and(eq(residente.tenantId, args.tenantId), inArray(residente.id, ids)));
 
-    const text = tpl.body({ short: args.shortCode, nota: args.nota ?? '' });
+    const text = tpl.body({ short: args.shortCode });
 
     for (const r of rows) {
       // 1. WhatsApp channel.
@@ -292,7 +294,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             estado: 'PENDIENTE',
           })
           .returning({ id: notificacion.id });
-        void this.sendPush(pushNotif[0]!.id, r.pushToken, args.shortCode, args.to, args.nota);
+        void this.sendPush(pushNotif[0]!.id, r.pushToken, args.shortCode, args.to, null);
       }
     }
   }

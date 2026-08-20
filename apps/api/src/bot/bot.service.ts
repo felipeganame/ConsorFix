@@ -84,7 +84,53 @@ export class BotService {
    * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
    * con y sin barra: por WhatsApp nadie escribe "/estado".
    */
+  /**
+   * Cómo dice "sí" y "no" un vecino por chat.
+   *
+   * Están acá y no repetidos en cada handler porque las dos confirmaciones del
+   * bot —registrar el reporte y sumar el voto a un duplicado— aceptaban palabras
+   * distintas: "dale" servía para registrar y fallaba para votar, y el vecino
+   * recibía "No te entendí" sin motivo. Si mañana se agrega otra confirmación,
+   * hereda el mismo vocabulario.
+   */
+  private static readonly AFIRMA = /^(s|si|sí|sip|dale|ok|oka|okey|listo|confirmo|correcto|obvio|1)$/i;
+  private static readonly NIEGA = /^(n|no|nop|nope|cancelar|mal|negativo|2)$/i;
+
+  /**
+   * Cortesías que no son un reporte ni un comando. Se atajan antes de llamar al
+   * modelo: además de evitar el ticket inventado, ahorra una llamada paga por
+   * cada "gracias".
+   */
+  private static readonly CORTESIAS = new Set([
+    'gracias',
+    'muchas gracias',
+    'mil gracias',
+    'ok',
+    'oka',
+    'okey',
+    'dale',
+    'perfecto',
+    'buenisimo',
+    'buenísimo',
+    'genial',
+    'listo',
+    'barbaro',
+    'bárbaro',
+    'de nada',
+    'chau',
+    'saludos',
+    'buenas',
+    'buen dia',
+    'buen día',
+    'buenas tardes',
+    'buenas noches',
+  ]);
+
   private static readonly COMANDOS_SET = new Set([
+    // Singular y plural: el menú de ayuda anuncia "estado", y escribir justo la
+    // palabra que el bot te dijo tiene que funcionar. Antes solo estaba el
+    // plural, así que "estado" caía en la lista de cortesías y el vecino recibía
+    // "cuando necesites algo, contame" en lugar de sus reportes.
     'estado',
     'estados',
     'mis reportes',
@@ -95,9 +141,28 @@ export class BotService {
     'menú',
   ]);
 
+  /**
+   * Única puerta de entrada. Marca el webhook como procesado en un solo lugar.
+   *
+   * Antes cada camino se acordaba —o se olvidaba— de marcarlo por su cuenta, y
+   * de ~15 salidas solo cuatro lo hacían: los comandos, los mensajes vacíos y
+   * los errores de audio quedaban en RECIBIDO para siempre (23 de 52 eventos en
+   * desarrollo). Como `wamid` es la clave de idempotencia de la regla 3, una
+   * reentrega del proveedor los habría vuelto a contestar.
+   *
+   * Marcarlo acá y no en cada rama tiene además la semántica correcta: si el
+   * manejo termina sin excepción, ya le respondimos al vecino y no hay que
+   * repetirlo; si lanza, el evento queda sin marcar y una reentrega lo reintenta.
+   */
   async handle(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
+    const r = await this.despachar(inbound);
+    await this.markWebhookProcessed(inbound.wamid);
+    return r;
+  }
+
+  private async despachar(inbound: InboundMessage): Promise<{ status: string; ticketId?: string }> {
     if (inbound.kind === 'other') {
-      await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.');
+      await this.reply(inbound.from, 'Formato no soportado. Mandá texto o foto.', inbound);
       return { status: 'unsupported-kind' };
     }
 
@@ -129,8 +194,7 @@ export class BotService {
       await this.reply(
         inbound.from,
         'Tu número figura en más de una administración, así que no puedo saber a cuál corresponde este reporte. Contactá a tu administración para que lo resuelvan.',
-      );
-      await this.markWebhookProcessed(inbound.wamid);
+        inbound);
       return { status: 'ambiguous-tenant' };
     }
     // RF-G02: registrar el inbound abre la ventana de 24 h para poder
@@ -157,8 +221,21 @@ export class BotService {
       return this.responderComando(inbound, resi, comando);
     }
 
-    // Sesión activa: ruteo según step.
+    // Una cortesía suelta no es un reporte. Ojo: solo cuando NO hay una sesión
+    // esperando respuesta, porque ahí "dale" u "ok" significan "sí, registralo".
     const session = await getActiveSession(inbound.from);
+    const cortesia = comando.replace(/[!¡.]+$/, '');
+    if (inbound.kind === 'text' && !session && BotService.CORTESIAS.has(cortesia)) {
+      // "De nada" a un "chau" queda raro, así que el agradecimiento se responde
+      // distinto del saludo de salida.
+      const texto = /gracias/.test(cortesia)
+        ? 'De nada. Cuando necesites algo, contame y lo registro.'
+        : 'Cuando necesites algo, contame y lo registro.';
+      await this.reply(inbound.from, texto, inbound);
+      return { status: 'cortesia' };
+    }
+
+    // Sesión activa: ruteo según step.
     if (session?.state.step === 'pick_consorcio') {
       return this.handleConsorcioChoice(inbound, resi, session.state);
     }
@@ -171,7 +248,7 @@ export class BotService {
 
     const consorcios = await this.consorciosDelResidente(resi.id, resi.tenantId);
     if (consorcios.length === 0) {
-      await this.reply(inbound.from, 'No tenés consorcios activos. Contactá a tu administración.');
+      await this.reply(inbound.from, 'No tenés consorcios activos. Contactá a tu administración.', inbound);
       return { status: 'no-active-consorcios' };
     }
 
@@ -181,7 +258,7 @@ export class BotService {
     let mediaPendiente: MediaPendiente | null = null;
     if (inbound.kind === 'audio') {
       if (!inbound.mediaId) {
-        await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.');
+        await this.reply(inbound.from, 'No pude recuperar tu audio. Probá escribirlo.', inbound);
         return { status: 'audio-no-mediaid' };
       }
       try {
@@ -198,17 +275,17 @@ export class BotService {
         const tr = await this.transcriber.transcribe(dl.bytes, { language: 'es' });
         text = (tr.text ?? '').trim();
         if (text.length === 0) {
-          await this.reply(inbound.from, 'No te entendí el audio. ¿Podés escribirlo?');
+          await this.reply(inbound.from, 'No te entendí el audio. ¿Podés escribirlo?', inbound);
           return { status: 'audio-empty-transcript' };
         }
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'transcription failed');
-        await this.reply(inbound.from, 'No pude procesar tu audio. ¿Podés escribirlo?');
+        await this.reply(inbound.from, 'No pude procesar tu audio. ¿Podés escribirlo?', inbound);
         return { status: 'audio-error' };
       }
     } else if (inbound.kind === 'image') {
       if (!inbound.mediaId) {
-        await this.reply(inbound.from, 'No pude recuperar tu foto. Probá describir con texto qué pasa.');
+        await this.reply(inbound.from, 'No pude recuperar tu foto. Probá describir con texto qué pasa.', inbound);
         return { status: 'image-no-mediaid' };
       }
       try {
@@ -224,7 +301,7 @@ export class BotService {
           promptVersion: VISION_PROMPT_VERSION,
         });
         if (!v.apropiado) {
-          await this.reply(inbound.from, 'La foto que mandaste no parece relacionada con un problema del consorcio. Probá mandar otra o describí con texto.');
+          await this.reply(inbound.from, 'La foto que mandaste no parece relacionada con un problema del consorcio. Probá mandar otra o describí con texto.', inbound);
           return { status: 'image-not-appropriate' };
         }
         // Merge: visión describe lo visible + lo que el usuario escribió.
@@ -232,12 +309,12 @@ export class BotService {
         text = userText.length > 0 ? `${userText}. ${v.descripcion}` : v.descripcion;
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'vision failed');
-        await this.reply(inbound.from, 'No pude analizar la foto. Probá describir con texto qué pasa.');
+        await this.reply(inbound.from, 'No pude analizar la foto. Probá describir con texto qué pasa.', inbound);
         return { status: 'image-error' };
       }
     }
     if (text.length === 0) {
-      await this.reply(inbound.from, 'Mensaje vacío. Contame qué pasa.');
+      await this.reply(inbound.from, 'Mensaje vacío. Contame qué pasa.', inbound);
       return { status: 'empty' };
     }
 
@@ -252,7 +329,7 @@ export class BotService {
       await this.reply(
         inbound.from,
         `Tenés ${consorcios.length} consorcios. ¿A cuál refiere el reporte?\n${list}\n\nRespondé con el número.`,
-      );
+        inbound);
       return { status: 'awaiting-consorcio-choice' };
     }
 
@@ -278,14 +355,14 @@ export class BotService {
     const options = state.options ?? [];
     if (!Number.isInteger(n) || n < 1 || n > options.length) {
       const list = options.map((o, i) => `${i + 1}. ${o.nombre}`).join('\n');
-      await this.reply(inbound.from, `No entendí. Respondé con un número del 1 al ${options.length}.\n${list}`);
+      await this.reply(inbound.from, `No entendí. Respondé con un número del 1 al ${options.length}.\n${list}`, inbound);
       return { status: 'consorcio-choice-invalid' };
     }
     const chosen = options[n - 1]!;
     const pendingText = state.pendingText ?? '';
     await clearSession(inbound.from);
     if (!pendingText) {
-      await this.reply(inbound.from, `Listo, consorcio ${chosen.nombre}. Contame qué pasa.`);
+      await this.reply(inbound.from, `Listo, consorcio ${chosen.nombre}. Contame qué pasa.`, inbound);
       return { status: 'consorcio-chosen-no-pending' };
     }
     return this.classifyDedupCreate(inbound, resi, chosen.consorcioId, chosen.unidadId, pendingText);
@@ -297,28 +374,28 @@ export class BotService {
     state: SessionState,
   ): Promise<{ status: string; ticketId?: string }> {
     const raw = (inbound.text ?? '').trim().toLowerCase();
-    const yes = /^(s|si|sí|yes|y|1)$/i.test(raw);
+    const yes = BotService.AFIRMA.test(raw);
     const no = /^(n|no|2)$/i.test(raw);
     if (!yes && !no) {
-      await this.reply(inbound.from, 'Respondé Sí para sumar tu voto al reporte existente, o No para crear uno nuevo.');
+      await this.reply(inbound.from, 'Respondé Sí para sumar tu voto al reporte existente, o No para crear uno nuevo.', inbound);
       return { status: 'dedup-confirm-invalid' };
     }
     const candidate = state.dedupCandidate;
     const inputs = state.pendingTicketInputs;
     if (!candidate || !inputs) {
       await clearSession(inbound.from);
-      await this.reply(inbound.from, 'Tu sesión expiró. Volvé a mandar el reporte.');
+      await this.reply(inbound.from, 'Tu sesión expiró. Volvé a mandar el reporte.', inbound);
       return { status: 'dedup-session-corrupt' };
     }
 
     await clearSession(inbound.from);
-    await this.markWebhookProcessed(inbound.wamid);
 
     if (yes) {
       await this.castVote(resi.tenantId, candidate.ticketId, resi.id);
       await this.reply(
         inbound.from,
         `Sumé tu voto al reporte "${candidate.titulo}" (#${candidate.ticketId.slice(0, 8)}). Te vamos a notificar cuando avance.`,
+        inbound,
       );
       return { status: 'voted-existing', ticketId: candidate.ticketId };
     }
@@ -341,6 +418,7 @@ export class BotService {
     await this.reply(
       inbound.from,
       `Ok, registré un reporte nuevo (#${t.id.slice(0, 8)}). Categoría: ${inputs.classifiedCategoria}, urgencia: ${inputs.classifiedUrgencia}. El administrador lo va a validar.`,
+      inbound,
     );
     return { status: 'created-new', ticketId: t.id };
   }
@@ -359,8 +437,33 @@ export class BotService {
       classified = await this.classifier.classify(text, { promptVersion: CLASSIFIER_PROMPT_VERSION });
     } catch (err) {
       this.log.error({ err: (err as Error).message }, 'classifier failed');
-      await this.reply(inbound.from, 'No pude procesar tu reporte en este momento. Probá de nuevo en unos minutos.');
+      await this.reply(inbound.from, 'No pude procesar tu reporte en este momento. Probá de nuevo en unos minutos.', inbound);
       return { status: 'classifier-error', ticketId: '' };
+    }
+
+    // El clasificador puede abstenerse (RF-B06). Sin esto, cualquier mensaje sin
+    // contenido salía convertido en un reclamo inventado: un "Gracias" llegaba a
+    // la bandeja como "Agujero en el techo del pasillo" con urgencia alta. Es
+    // mejor repreguntar que registrar basura — la administración abre la bandeja
+    // esperando problemas reales.
+    //
+    // Y cuando el mensaje no es un reporte pero sí una pregunta, se contesta la
+    // pregunta en vez de mandarla a repetir. "¿Cuál fue el último registro?"
+    // recibía "no encontré un problema para registrar": cierto e inútil. El
+    // ruteo cae en `responderComando`, el mismo que atiende la palabra escrita
+    // exacta, así que la lista de reportes se arma en un solo lugar.
+    if (classified.intencion !== 'REPORTE') {
+      if (classified.intencion === 'CONSULTA_ESTADO' || classified.intencion === 'AYUDA') {
+        const comando = classified.intencion === 'AYUDA' ? 'ayuda' : 'estado';
+        const r = await this.responderComando(inbound, resi, comando);
+        return { ...r, ticketId: '' };
+      }
+      await this.reply(
+        inbound.from,
+        'No encontré un problema para registrar en ese mensaje. Contame qué pasa y lo anoto: qué se rompió o qué está mal, y dónde. También podés preguntarme cómo vienen tus reportes.',
+        inbound,
+      );
+      return { status: 'sin-reporte', ticketId: '' };
     }
 
     let embedding: number[];
@@ -397,14 +500,16 @@ export class BotService {
               classifiedConfianza: classified.confianza,
               classifiedModelo: classified.modelo,
               classifiedPromptVersion: classified.prompt_version,
-              ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+              // `!= null` cubre null y undefined: el modelo ahora manda null explícito
+          // cuando el reporte no dice dónde, y la sesión guarda solo strings.
+          ...(classified.ubicacion != null && { classifiedUbicacion: classified.ubicacion }),
               embedding,
             },
           });
-          await this.markWebhookProcessed(inbound.wamid);
           await this.reply(
             inbound.from,
             `Ya hay un reporte parecido: "${candidate.titulo}" (#${candidate.ticketId.slice(0, 8)}). ¿Sumás tu voto? Respondé Sí o No.`,
+            inbound,
           );
           return { status: 'dedup-offered', ticketId: candidate.ticketId };
         }
@@ -438,13 +543,14 @@ export class BotService {
           classifiedConfianza: classified.confianza,
           classifiedModelo: classified.modelo,
           classifiedPromptVersion: classified.prompt_version,
-          ...(classified.ubicacion !== undefined && { classifiedUbicacion: classified.ubicacion }),
+          // `!= null` cubre null y undefined: el modelo ahora manda null explícito
+          // cuando el reporte no dice dónde, y la sesión guarda solo strings.
+          ...(classified.ubicacion != null && { classifiedUbicacion: classified.ubicacion }),
           ...(classified.uso ? { classifiedUso: classified.uso } : {}),
           ...(subida ? { mediaSubida: subida } : {}),
           embedding,
         },
       });
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(inbound.from, resumenDeReporte(classified), inbound);
       return { status: 'awaiting-report-confirm', ticketId: '' };
     }
@@ -478,12 +584,12 @@ export class BotService {
       t.id,
       mediaYaSubida ?? (await this.subirMedia(resi.tenantId, mediaPendiente)),
     );
-    await this.markWebhookProcessed(inbound.wamid);
     await this.reply(
       inbound.from,
       classified.tipo === 'CONDUCTA'
         ? `Listo, registré tu reporte de convivencia (#${t.id.slice(0, 8)}). Es anónimo: el vecino nunca va a saber quién lo reportó. El administrador lo va a revisar.`
         : `Listo, registré tu reporte (#${t.id.slice(0, 8)}). Categoría: ${classified.categoria}, urgencia: ${classified.urgencia}. El administrador lo va a validar.`,
+      inbound,
     );
     return { status: 'created', ticketId: t.id };
   }
@@ -677,6 +783,8 @@ export class BotService {
         [
           'Hola. Contame qué problema hay y lo registro — podés escribirlo, mandar un audio o una foto.',
           '',
+          'También podés preguntarme en tus palabras cómo vienen tus reportes.',
+          '',
           'Comandos:',
           '• *estado* — cómo vienen tus reportes',
           '• *ayuda* — este mensaje',
@@ -736,13 +844,12 @@ export class BotService {
     const inputs = state.pendingTicketInputs;
     if (!inputs) {
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(inbound.from, 'Se me perdió el reporte. ¿Me lo contás de nuevo?', inbound);
       return { status: 'confirm-session-corrupt' };
     }
 
-    const si = /^(s[ií]|si|dale|ok|confirmo|correcto|1)$/.test(raw);
-    const no = /^(no|cancelar|mal|2)$/.test(raw);
+    const si = BotService.AFIRMA.test(raw);
+    const no = BotService.NIEGA.test(raw);
 
     if (!si && !no) {
       // Cualquier otra cosa se interpreta como una corrección: el residente
@@ -751,7 +858,6 @@ export class BotService {
       // descartado en cada vuelta — y una FOTO acá dejaba el webhook_event en
       // PENDIENTE para siempre.
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       if (inbound.kind === 'text' && raw.length > 0) {
         await this.reply(inbound.from, 'Ok, tomo esto como la versión corregida.', inbound);
         // Se reprocesa como reporte nuevo, ya sin sesión, ARRASTRANDO la media
@@ -770,7 +876,6 @@ export class BotService {
 
     if (no) {
       await clearSession(inbound.from);
-      await this.markWebhookProcessed(inbound.wamid);
       await this.reply(
         inbound.from,
         'Listo, lo descarté. Contame de nuevo qué pasa y lo registro como me digas.',
@@ -799,7 +904,6 @@ export class BotService {
 
     await this.asociarMediaSubida(resi.tenantId, t.id, inputs.mediaSubida);
     await clearSession(inbound.from);
-    await this.markWebhookProcessed(inbound.wamid);
 
     await this.reply(
       inbound.from,
@@ -884,7 +988,20 @@ export class BotService {
    * Responde por el MISMO canal del que vino el mensaje. Sin esto, un reporte
    * hecho por Telegram recibiría la respuesta por WhatsApp — o no la recibiría.
    */
-  private async reply(to: string, text: string, inbound?: InboundMessage) {
+  /**
+   * Responde al vecino por el canal del que vino el mensaje.
+   *
+   * `inbound` es OBLIGATORIO a propósito. Era opcional, y cada llamada que se lo
+   * olvidaba caía al proveedor de WhatsApp aunque el mensaje hubiera entrado por
+   * Telegram: el texto salía dirigido al `chat_id` como si fuera un teléfono, así
+   * que el vecino no recibía nada y el mensaje terminaba en el outbox del mock.
+   * Verificado con un Telegram real: "No tenés consorcios activos" salió a
+   * WhatsApp con destino 5050393967, que es un chat_id.
+   *
+   * Con el parámetro obligatorio el compilador señala cualquier llamada que se
+   * olvide del canal, así que el error no puede volver a colarse.
+   */
+  private async reply(to: string, text: string, inbound: InboundMessage) {
     try {
       if (inbound?.channel === 'telegram') {
         const destino = inbound.externalId ?? to;

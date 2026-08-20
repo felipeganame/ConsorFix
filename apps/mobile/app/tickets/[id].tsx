@@ -82,7 +82,12 @@ export default function TicketDetailScreen(): JSX.Element {
     );
   }
 
-  const canVote = t.estado !== 'DESCARTADO' && t.estado !== 'SOLUCIONADO';
+  // Las conductas NO se votan: son una denuncia entre vecinos, no un reclamo
+  // colectivo que gane prioridad por apoyo (RF-F02 / P5). La API las rechaza con
+  // 403, y acá se mostraba el botón igual: el denunciado veía "Sumar voto" sobre
+  // la denuncia hecha en su contra y el único resultado posible era un error.
+  const esConducta = t.tipo === 'CONDUCTA';
+  const canVote = !esConducta && t.estado !== 'DESCARTADO' && t.estado !== 'SOLUCIONADO';
   const { step, status } = stepFromEstado(t);
 
   return (
@@ -125,7 +130,17 @@ export default function TicketDetailScreen(): JSX.Element {
         <Stepper current={step} status={status} />
       </Card>
 
-      {/* Voto */}
+      {/* Voto. En conducta la tarjeta entera no aplica: el contador siempre va a
+          ser 0 y "vecinos afectados" no significa nada en una denuncia. */}
+      {esConducta ? (
+        <Card style={{ marginTop: 12 }}>
+          <CardLabel>Reporte de conducta</CardLabel>
+          <Text style={styles.desc}>
+            Lo maneja la administración en privado. Quien lo reportó queda anónimo, y estos
+            reportes no se votan.
+          </Text>
+        </Card>
+      ) : (
       <Card style={{ marginTop: 12 }}>
         <View style={styles.voteRow}>
           <View>
@@ -149,6 +164,30 @@ export default function TicketDetailScreen(): JSX.Element {
           )}
         </View>
       </Card>
+      )}
+
+      {/* Costo del arreglo (RF-D05/E02/G10). `null` = no corresponde mostrarlo:
+          es un ticket de otra unidad o una conducta. Lista vacía = todavía no se
+          cargó ningún costo, y decirlo es mejor que no mostrar la sección: el
+          vecino se pregunta cuánto salió. */}
+      {t.costosConfirmados && (
+        <Card style={{ marginTop: 12 }}>
+          <CardLabel>Costo del arreglo</CardLabel>
+          {t.costosConfirmados.length === 0 ? (
+            <Text style={styles.desc}>
+              La administración todavía no cargó el costo.
+            </Text>
+          ) : (
+            t.costosConfirmados.map((c) => (
+              <Meta
+                key={c.moneda}
+                k={c.moneda}
+                v={c.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              />
+            ))
+          )}
+        </Card>
+      )}
 
       {/* Fechas */}
       <Card style={{ marginTop: 12 }}>

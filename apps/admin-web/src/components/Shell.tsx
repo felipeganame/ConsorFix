@@ -1,6 +1,18 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { listConsorcios, type Consorcio } from '../lib/api.js';
+import {
+  EVENTO_CONSORCIO_ACTIVO,
+  EVENTO_CONSORCIOS,
+  getConsorcioActivo,
+  getTenantOverride,
+  limpiarConsorcioActivo,
+  setConsorcioActivo,
+  listConsorcios,
+  listTenants,
+  setTenantOverride,
+  type Consorcio,
+  type Tenant,
+} from '../lib/api.js';
 import { useAuth } from '../lib/auth-ctx.js';
 import { Icons } from './Icons.js';
 
@@ -25,16 +37,89 @@ const NAV: NavItem[] = [
   { to: '/bitacora', label: 'Bitácora', icon: Icons.shield },
 ];
 
+/**
+ * Solo para el super administrador de la plataforma: da de alta administraciones
+ * (RF-A01). No se muestra al ADMIN porque la API le responde 403, y ofrecerle un
+ * link que siempre falla es peor que no ofrecerlo.
+ */
+const NAV_SUPER: NavItem[] = [
+  { to: '/administraciones', label: 'Administraciones', icon: Icons.building },
+];
+
 export function Shell(_props: ShellProps): JSX.Element {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const loc = useLocation();
   const [consorcios, setConsorcios] = useState<Consorcio[]>([]);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * El SUPER_ADMIN no pertenece a ninguna administración, así que tiene que
+   * elegir en cuál trabajar: la API le exige el header `x-tenant-id` en todo lo
+   * que es de tenant y responde `no tenant in token` sin él.
+   *
+   * `apiFetch` ya mandaba ese header cuando había una administración elegida, y
+   * **ninguna pantalla la dejaba elegir nunca**: la cañería estaba puesta y no
+   * llegaba a ningún lado. El super admin entraba y la bandeja le mostraba el
+   * error crudo de la API.
+   */
+  const esSuper = user?.kind === 'SUPER_ADMIN';
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantElegido, setTenantElegido] = useState<string | null>(getTenantOverride());
+
   useEffect(() => {
-    listConsorcios().then(setConsorcios).catch(() => undefined);
+    if (!esSuper) return;
+    listTenants().then(setTenants).catch(() => undefined);
+  }, [esSuper]);
+
+  useEffect(() => {
+    // Sin administración elegida no hay consorcios que pedir: el request
+    // fallaría y ensuciaría la consola con un error esperado.
+    if (esSuper && !tenantElegido) return;
+    const cargar = () => listConsorcios().then(setConsorcios).catch(() => undefined);
+    void cargar();
+    // Se recarga cuando alguna pantalla avisa que la lista cambió, así el
+    // selector no queda diciendo "Sin consorcios" después de crear el primero.
+    window.addEventListener(EVENTO_CONSORCIOS, cargar);
+    return () => window.removeEventListener(EVENTO_CONSORCIOS, cargar);
+  }, [esSuper, tenantElegido]);
+
+  /**
+   * Consorcio activo. Lo comparten la Bandeja, el Resumen y Unidades, así que
+   * elegirlo acá filtra el panel entero en vez de navegar a una pantalla.
+   */
+  const [consorcioActivo, setConsorcioActivoState] = useState<string | null>(getConsorcioActivo());
+
+  useEffect(() => {
+    const sincronizar = () => setConsorcioActivoState(getConsorcioActivo());
+    window.addEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
+    return () => window.removeEventListener(EVENTO_CONSORCIO_ACTIVO, sincronizar);
   }, []);
+
+  // Si el consorcio guardado ya no está en la lista —lo archivaron, o cambió la
+  // administración— se olvida en vez de dejar al panel filtrando por un id que
+  // no existe y mostrando vacío sin explicación.
+  useEffect(() => {
+    if (!consorcioActivo || consorcios.length === 0) return;
+    if (!consorcios.some((c) => c.id === consorcioActivo)) limpiarConsorcioActivo();
+  }, [consorcioActivo, consorcios]);
+
+  function elegirConsorcio(id: string) {
+    setSwitcherOpen(false);
+    setConsorcioActivo(id);
+  }
+
+  function elegirTenant(id: string) {
+    setTenantOverride(id);
+    setTenantElegido(id);
+    setSwitcherOpen(false);
+    // Recarga completa a propósito: cada pantalla trae sus datos en su propio
+    // `useEffect` y no hay un store global que invalidar. Es un cambio de
+    // contexto poco frecuente, así que la recarga es más confiable que
+    // sincronizar diez pantallas a mano.
+    window.location.reload();
+  }
 
   useEffect(() => {
     if (!switcherOpen) return;
@@ -45,11 +130,6 @@ export function Shell(_props: ShellProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [switcherOpen]);
 
-  function goToConsorcio(id: string) {
-    setSwitcherOpen(false);
-    nav(`/unidades?consorcio=${id}`);
-  }
-
   const initials = (user?.nombre ?? '?')
     .split(' ')
     .map((p) => p[0])
@@ -58,7 +138,32 @@ export function Shell(_props: ShellProps): JSX.Element {
     .toUpperCase();
 
   const totalConsorcios = consorcios.length;
-  const firstName = consorcios[0]?.nombre ?? 'Sin consorcios';
+  const nombreTenant = tenants.find((t) => t.id === tenantElegido)?.nombre;
+  // El selector de arriba muestra administraciones al super admin y consorcios
+  // al resto: es el mismo lugar, pero el contexto que cada uno cambia es otro.
+  // Para el admin este control NO es un selector de contexto: no existe un
+  // "consorcio activo" global, cada pantalla tiene su propio filtro. Mostraba
+  // `consorcios[0].nombre`, o sea el primero de la lista, y con dos consorcios
+  // decía uno mientras la pantalla trabajaba con el otro. Se muestra el nombre
+  // solo cuando hay uno —ahí no hay ambigüedad posible— y si hay varios se dice
+  // lo que el control realmente es.
+  // El super admin elige administración en este control; el admin elige consorcio.
+  // Es el mismo lugar porque en los dos casos es "en qué contexto estoy
+  // trabajando", pero el contexto que le corresponde a cada uno es distinto.
+  const nombreConsorcioActivo = consorcios.find((c) => c.id === consorcioActivo)?.nombre;
+  const tituloSwitcher = esSuper
+    ? (nombreTenant ?? 'Elegí administración')
+    : totalConsorcios === 0
+      ? 'Sin consorcios'
+      : (nombreConsorcioActivo ?? 'Todos los consorcios');
+  const subtituloSwitcher = esSuper
+    ? (tenantElegido ? 'administración activa' : 'ninguna elegida')
+    : totalConsorcios === 0
+      ? 'agregá uno'
+      : nombreConsorcioActivo
+        ? 'consorcio activo'
+        : `${totalConsorcios} en total`;
+  const faltaElegirTenant = esSuper && !tenantElegido && loc.pathname !== '/administraciones';
 
   function onLogout() {
     logout();
@@ -80,20 +185,23 @@ export function Shell(_props: ShellProps): JSX.Element {
           <button
             type="button"
             className="sidebar-tenant"
-            style={{ width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+            /* Sin `width: 100%`: la clase ya tiene `margin: 0 14px` y es
+               `display: flex`, así que ocupa el ancho disponible descontando sus
+               márgenes. Con el 100% medía 232px + 28px de margen y se desbordaba
+               del sidebar exactamente esos 28px. */
+            style={{ cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+            title={esSuper && !tenantElegido ? 'Elegí una administración para trabajar' : tituloSwitcher}
             onClick={() => setSwitcherOpen((o) => !o)}
-            disabled={totalConsorcios === 0}
+            disabled={esSuper ? tenants.length === 0 : totalConsorcios === 0}
           >
             <div className="sidebar-tenant-icon">
               <Icons.building size={14} />
             </div>
             <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {firstName}
+                {tituloSwitcher}
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>
-                {totalConsorcios === 0 ? 'agregá uno' : totalConsorcios === 1 ? '1 consorcio' : `${totalConsorcios} consorcios`}
-              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--cf-ink-3)' }}>{subtituloSwitcher}</div>
             </div>
             <Icons.chevDown size={14} stroke="var(--cf-ink-3)" />
           </button>
@@ -106,23 +214,68 @@ export function Shell(_props: ShellProps): JSX.Element {
                 padding: 6, zIndex: 20, maxHeight: 260, overflowY: 'auto',
               }}
             >
-              {consorcios.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="btn ghost sm"
-                  style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
-                  onClick={() => goToConsorcio(c.id)}
-                >
-                  {c.nombre}
-                </button>
-              ))}
+              {!esSuper && (
+                <>
+                  <div
+                    className="uppercase"
+                    style={{ padding: '4px 8px 6px', color: 'var(--cf-ink-3)', fontSize: 10.5 }}
+                  >
+                    Trabajar en
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{
+                      width: '100%',
+                      justifyContent: 'flex-start',
+                      marginBottom: 2,
+                      fontWeight: consorcioActivo ? 500 : 700,
+                    }}
+                    onClick={() => elegirConsorcio('')}
+                  >
+                    Todos los consorcios
+                  </button>
+                </>
+              )}
+              {esSuper
+                ? tenants.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="btn ghost sm"
+                      style={{
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        marginBottom: 2,
+                        fontWeight: t.id === tenantElegido ? 700 : 500,
+                      }}
+                      onClick={() => elegirTenant(t.id)}
+                    >
+                      {t.nombre}
+                    </button>
+                  ))
+                : consorcios.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="btn ghost sm"
+                      style={{
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        marginBottom: 2,
+                        fontWeight: c.id === consorcioActivo ? 700 : 500,
+                      }}
+                      onClick={() => elegirConsorcio(c.id)}
+                    >
+                      {c.nombre}
+                    </button>
+                  ))}
             </div>
           )}
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {[...NAV, ...(user?.kind === 'SUPER_ADMIN' ? NAV_SUPER : [])].map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end ?? false}>
               {({ isActive }) => (
                 <>
@@ -151,7 +304,47 @@ export function Shell(_props: ShellProps): JSX.Element {
       </aside>
 
       <div className="main">
-        <Outlet />
+        {faltaElegirTenant ? (
+          <>
+            <Topbar
+              title="Elegí una administración"
+              subtitle="Como super admin no perteneces a ninguna: tenés que indicar en cuál trabajar"
+            />
+            <div className="content">
+              <section className="stack">
+                <div className="card">
+                  <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--cf-ink-2)' }}>
+                    Los consorcios, las unidades y los tickets pertenecen a una administración.
+                    Elegí una acá —o desde el selector de arriba a la izquierda— y el panel entero
+                    va a mostrar sus datos.
+                  </p>
+                  {tenants.length === 0 ? (
+                    <div className="muted small">
+                      Todavía no hay ninguna. Creá la primera en{' '}
+                      <NavLink to="/administraciones">Administraciones</NavLink>.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {tenants.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className="btn ghost"
+                          style={{ justifyContent: 'flex-start' }}
+                          onClick={() => elegirTenant(t.id)}
+                        >
+                          <Icons.building size={14} /> {t.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <Outlet />
+        )}
       </div>
     </div>
   );
@@ -170,14 +363,13 @@ export function Topbar({ title, subtitle, actions }: TopbarProps): JSX.Element {
         <h1>{title}</h1>
         {subtitle && <div className="topbar-sub">{subtitle}</div>}
       </div>
-      <div className="topbar-actions">
-        <div className="search">
-          <Icons.search size={14} />
-          <input placeholder="Buscar incidentes, vecinos…" />
-          <span className="mono" style={{ background: 'var(--cf-bg)', padding: '1px 5px', borderRadius: 4, fontSize: 10.5 }}>⌘K</span>
-        </div>
-        {actions}
-      </div>
+      {/* Acá había un buscador global con un atajo "⌘K" dibujado: el input no
+          tenía value ni onChange y el atajo no existía en ningún listener, así
+          que era el control más visible del panel y no hacía absolutamente
+          nada. La búsqueda real vive en la bandeja, que es donde hay algo que
+          buscar; un buscador global honesto necesitaría un endpoint de búsqueda
+          que la API todavía no tiene. */}
+      <div className="topbar-actions">{actions}</div>
     </div>
   );
 }

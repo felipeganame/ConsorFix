@@ -129,24 +129,53 @@ describe('canResidenteSeeCosto (G10)', () => {
     expect(canResidenteSeeCosto(propietarioDeB, comun)).toBe(true);
   });
 
-  it('costo de ticket de UNIDAD: privado, no visible (ni para el ocupante)', () => {
-    const unidadTicket = {
-      tipo: 'INFRAESTRUCTURA' as const,
-      origen: 'UNIDAD' as const,
-      unidadId: unidadA,
-      consorcioId: cons1,
-    };
-    expect(canResidenteSeeCosto(propietarioDeA, unidadTicket)).toBe(false);
+  // Decisión 2026-08-18: antes esto exigía `false` incluso para el ocupante, y
+  // dejaba el sistema incoherente — el admin podía cargar la factura del plomero
+  // en un ticket de unidad y después NADIE salvo él podía verla nunca, ni quien
+  // la paga. G10 protege el costo privado del *resto* del consorcio.
+  const unidadTicket = {
+    tipo: 'INFRAESTRUCTURA' as const,
+    origen: 'UNIDAD' as const,
+    unidadId: unidadA,
+    consorcioId: cons1,
+  };
+
+  it('costo de ticket de UNIDAD: visible a los ocupantes de esa unidad', () => {
+    expect(canResidenteSeeCosto(propietarioDeA, unidadTicket)).toBe(true);
+    expect(canResidenteSeeCosto(inquilinoDeA, unidadTicket)).toBe(true);
   });
 
-  it('costo de ticket de CONDUCTA: nunca visible', () => {
+  it('costo de ticket de UNIDAD: oculto al resto del consorcio', () => {
+    expect(canResidenteSeeCosto(propietarioDeB, unidadTicket)).toBe(false);
+  });
+
+  it('costo de UNIDAD: ser el reportante no alcanza si no se ocupa la unidad', () => {
+    // Un vecino puede reportar la filtración del 1A; eso no le da la factura del 1A.
+    const reportadoPorVecino = { ...unidadTicket, reportanteId: propietarioDeB.residenteId };
+    expect(canResidenteSeeTicket(propietarioDeB, reportadoPorVecino)).toBe(true);
+    expect(canResidenteSeeCosto(propietarioDeB, reportadoPorVecino)).toBe(false);
+  });
+
+  it('costo con origen sin validar: se trata como UNIDAD, no se publica', () => {
+    const sinValidar = { ...unidadTicket, origen: null };
+    expect(canResidenteSeeCosto(propietarioDeA, sinValidar)).toBe(true);
+    expect(canResidenteSeeCosto(propietarioDeB, sinValidar)).toBe(false);
+  });
+
+  it('costo de ticket de CONDUCTA: nunca visible, ni al acusado ni al denunciante', () => {
     const conducta = {
       tipo: 'CONDUCTA' as const,
       origen: null,
       unidadId: unidadA,
+      unidadReportadaId: unidadA,
       consorcioId: cons1,
     };
+    // El acusado ve el ticket pero no el monto: publicar la sanción en pesos lo
+    // vuelve parte del conflicto entre vecinos (G11).
+    expect(canResidenteSeeTicket(propietarioDeA, conducta)).toBe(true);
     expect(canResidenteSeeCosto(propietarioDeA, conducta)).toBe(false);
+    const denunciante = { ...conducta, reportanteId: propietarioDeB.residenteId };
+    expect(canResidenteSeeCosto(propietarioDeB, denunciante)).toBe(false);
   });
 
   it('residente de otro consorcio no ve el costo común', () => {

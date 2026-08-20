@@ -25,7 +25,9 @@ let ten: { id: string };
 let consA: { id: string }; // consorcio con tickets/costos
 let consB: { id: string }; // consorcio "vacío" para probar filtro
 let uniA: { id: string }; // unidad del residente
+let uniOtra: { id: string }; // otra unidad del MISMO consorcio
 let resi: { id: string };
+let vecinoOtraUnidad: { id: string }; // mismo consorcio, otra unidad
 let ticketComun: { id: string };
 let ticketUnidad: { id: string };
 let ticketConducta: { id: string };
@@ -38,8 +40,13 @@ beforeAll(async () => {
   consA = (await systemDb.insert(consorcio).values({ tenantId: ten.id, nombre: `${PREFIX}A`, tipo: 'EDIFICIO' }).returning())[0]!;
   consB = (await systemDb.insert(consorcio).values({ tenantId: ten.id, nombre: `${PREFIX}B`, tipo: 'EDIFICIO' }).returning())[0]!;
   uniA = (await systemDb.insert(unidad).values({ tenantId: ten.id, consorcioId: consA.id, etiqueta: '4A' }).returning())[0]!;
+  uniOtra = (await systemDb.insert(unidad).values({ tenantId: ten.id, consorcioId: consA.id, etiqueta: '7C' }).returning())[0]!;
   resi = (await systemDb.insert(residente).values({ tenantId: ten.id, nombre: `${PREFIX}resi`, telefonoE164: `+5491${Date.now() % 100000000}` }).returning())[0]!;
-  await systemDb.insert(vinculoResidente).values({ tenantId: ten.id, residenteId: resi.id, unidadId: uniA.id, rol: 'PROPIETARIO', activo: true });
+  vecinoOtraUnidad = (await systemDb.insert(residente).values({ tenantId: ten.id, nombre: `${PREFIX}vecino`, telefonoE164: `+5492${Date.now() % 100000000}` }).returning())[0]!;
+  await systemDb.insert(vinculoResidente).values([
+    { tenantId: ten.id, residenteId: resi.id, unidadId: uniA.id, rol: 'PROPIETARIO', activo: true },
+    { tenantId: ten.id, residenteId: vecinoOtraUnidad.id, unidadId: uniOtra.id, rol: 'PROPIETARIO', activo: true },
+  ]);
 
   // Ticket común con gasto confirmado (visible + costo visible).
   ticketComun = (await systemDb.insert(ticket).values({
@@ -54,7 +61,7 @@ beforeAll(async () => {
   ]);
 
   // Ticket de UNIDAD del residente, con gasto confirmado: visible al ocupante
-  // PERO su costo es privado (no debe aparecer en el feed).
+  // junto con su costo (es quien paga), e invisible para el resto del consorcio.
   ticketUnidad = (await systemDb.insert(ticket).values({
     tenantId: ten.id, consorcioId: consA.id, unidadId: uniA.id,
     tipo: 'INFRAESTRUCTURA', urgencia: 'MEDIA', estado: 'SOLUCIONADO',
@@ -88,11 +95,22 @@ describe('Feed del residente — costos visibles (RF-D05/E02/G10)', () => {
     expect(comun!.costosConfirmados).toEqual([{ moneda: 'ARS', total: 85000 }]);
   });
 
-  it('NO expone el costo de un ticket de UNIDAD (privado), aunque el ocupante vea el ticket', async () => {
+  // Decisión 2026-08-18: antes se esperaba `null` acá también. El costo de un
+  // ticket de unidad no es público, pero el ocupante de esa unidad es justamente
+  // quien paga la reparación: ocultárselo dejaba una factura que el admin cargaba
+  // y nadie más podía ver nunca. G10 protege el costo privado del resto del
+  // consorcio, no del afectado. Ver `canResidenteSeeCosto` en packages/domain.
+  it('expone al ocupante el costo confirmado de su propia unidad', async () => {
     const feed = await new MeService().listFeed(ten.id, resi.id);
     const u = feed.find((t) => t.id === ticketUnidad.id);
-    expect(u).toBeDefined(); // el ocupante VE el ticket
-    expect(u!.costosConfirmados).toBeNull(); // pero NO el costo
+    expect(u).toBeDefined();
+    expect(u!.costosConfirmados).toEqual([{ moneda: 'ARS', total: 12000 }]);
+  });
+
+  it('ese costo de unidad NO se le expone a un vecino de otra unidad', async () => {
+    const feed = await new MeService().listFeed(ten.id, vecinoOtraUnidad.id);
+    // El vecino no ve ni el ticket de la unidad ajena, así que menos su costo.
+    expect(feed.find((t) => t.id === ticketUnidad.id)).toBeUndefined();
   });
 
   it('oculta la identidad del reportante en tickets de conducta (RF-F02)', async () => {
