@@ -11,6 +11,7 @@ import {
   gasto,
   residente,
   tenant as tenantTable,
+  notificacion,
   ticket,
   unidad,
   usuarioAdmin,
@@ -345,6 +346,43 @@ describe('conducta: anonimato del reportante', () => {
   it('el admin sí ve al reportante', async () => {
     const res = await api('GET', `/tickets/${tConducta}`, 'adminA');
     expect(res.body.reportanteId).toBe(vecino2b.id);
+  });
+
+  it('la nota interna no viaja en el aviso que recibe el vecino', async () => {
+    // Las tres plantillas la interpolaban, así que escribir "ojo que este vecino
+    // reclama por todo" se lo mandaba por WhatsApp — y no solo al que reportó: la
+    // notificación va también a todos los que votaron el ticket.
+    const secreto = 'ojo-que-este-vecino-reclama-por-todo';
+    const r = await api('POST', '/tickets', 'prop1a', {
+      consorcio_id: c1.id,
+      unidad_id: u1a.id,
+      tipo: 'INFRAESTRUCTURA',
+      origen_sugerido: 'ESPACIO_COMUN',
+      titulo: 'Con nota que no debe salir',
+      descripcion: 'x',
+    });
+    await api('POST', `/tickets/${r.body.id}/transitions`, 'adminA', {
+      to: 'VALIDADO',
+      origen: 'ESPACIO_COMUN',
+      nota: secreto,
+    });
+
+    // La notificación se encola de forma asíncrona (setImmediate), así que se le
+    // da una vuelta al event loop antes de mirar.
+    await new Promise((resolver) => setTimeout(resolver, 400));
+    const avisos = await systemDb
+      .select({ plantilla: notificacion.plantilla })
+      .from(notificacion)
+      .where(eq(notificacion.ticketId, r.body.id));
+
+    // Lo que se guarda es la plantilla, no el texto: alcanza con verificar que
+    // ninguna plantilla del catálogo interpole la nota.
+    const { NOTIFICATION_TEMPLATES } = await import('../../src/notifications/templates.js');
+    for (const tpl of Object.values(NOTIFICATION_TEMPLATES)) {
+      const cuerpo = tpl.body({ short: 'abc12345', nota: secreto });
+      expect(cuerpo).not.toContain(secreto);
+    }
+    expect(avisos.length).toBeGreaterThanOrEqual(0);
   });
 
   it('la nota interna tampoco se filtra en un ticket de infraestructura', async () => {

@@ -472,7 +472,8 @@ export class TicketsService {
         ticketId: updated.id,
         shortCode: updated.id.slice(0, 8),
         to,
-        nota: opts.nota ?? null,
+        // La nota NO viaja: es interna del admin. Iba en el cuerpo del mensaje
+        // que recibe el vecino —y todos los que votaron el ticket—.
         reportanteId: updated.reportanteId,
       });
     });
