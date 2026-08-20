@@ -755,7 +755,11 @@ export function TicketDetailPage(): JSX.Element {
               <dl className="meta-list mt-3">
                 <dt>Consorcio</dt>
                 <dd className="small">{cons?.nombre ?? <span className="mono">{ticket.consorcioId.slice(0, 8)}</span>}</dd>
-                <dt>Unidad</dt>
+                {/* En un ticket de espacio común, `unidad_id` es la unidad de
+                    QUIEN REPORTÓ —el bot imputa la del vecino que escribe—, no
+                    dónde está el problema. Etiquetarla "Unidad" a secas invitaba a
+                    leer que el SUM sucio era de la 1B. */}
+                <dt>{ticket.origen === 'ESPACIO_COMUN' ? 'Reportó desde' : 'Unidad'}</dt>
                 <dd className="small">{etiquetaDe(ticket.unidadId)}</dd>
                 <dt>Visibilidad</dt>
                 <dd>
