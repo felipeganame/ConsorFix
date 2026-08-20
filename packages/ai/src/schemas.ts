@@ -33,6 +33,17 @@ export type Categoria = z.infer<typeof Categoria>;
  * una fuente de alucinación.
  */
 export const ClassifierModelOutput = z.object({
+  /**
+   * Si el mensaje no contiene ningún problema que registrar.
+   *
+   * Sin este campo el modelo está obligado a clasificar cualquier texto, así que
+   * lo inventa: un "Gracias" salía como "Agujero en el techo del pasillo", con
+   * urgencia alta, listo para ensuciar la bandeja de la administración. Un
+   * clasificador que no puede abstenerse alucina.
+   */
+  es_reporte: z
+    .boolean()
+    .describe('false si el mensaje no describe ningún problema (saludos, gracias, preguntas, charla)'),
   titulo: z.string().min(3).max(140).describe('Título corto y descriptivo del reporte'),
   descripcion_normalizada: z.string().min(1).max(2000).describe('El reporte reescrito de forma clara y neutra'),
   tipo: TipoTicket.describe('CONDUCTA si se queja del comportamiento de un vecino; si no, INFRAESTRUCTURA'),
@@ -61,6 +72,9 @@ export const ClassifierModelOutput = z.object({
 export type ClassifierModelOutput = z.infer<typeof ClassifierModelOutput>;
 
 export const ClassifierOutput = z.object({
+  // Los registros anteriores a este campo no lo tienen: se asume que sí eran
+  // reportes, porque llegaron a crear un ticket.
+  es_reporte: z.boolean().default(true),
   titulo: z.string().min(3).max(140),
   descripcion_normalizada: z.string().min(1).max(2000),
   tipo: TipoTicket,

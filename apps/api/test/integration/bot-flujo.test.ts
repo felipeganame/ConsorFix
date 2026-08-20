@@ -250,6 +250,36 @@ describe('comandos (RF-B10)', () => {
     expect((await ticketsDe(unConsorcio.id)).length).toBe(antes);
   });
 
+  it('todo comando que el menú anuncia, el bot lo acepta', async () => {
+    // El menú prometía "*estado*" y el set de comandos solo tenía "estados", así
+    // que escribir exactamente la palabra que el bot te dice caía en la lista de
+    // cortesías: el vecino recibía "cuando necesites algo, contame" en lugar de
+    // sus reportes. Este test lee los comandos del propio texto del menú, así que
+    // agregar una línea al menú sin implementarla vuelve a fallar acá.
+    const enviados: string[] = [];
+    const original = bot['reply'].bind(bot);
+    (bot as unknown as { reply: unknown }).reply = async (to: string, texto: string, ctx: unknown) => {
+      enviados.push(texto);
+      return (original as (a: string, b: string, c: unknown) => Promise<void>)(to, texto, ctx);
+    };
+    try {
+      await bot.handle(msg(TEL_UNO, 'ayuda'));
+      const menu = enviados.find((t) => t.includes('Comandos:'));
+      expect(menu).toBeTruthy();
+      const anunciados = [...menu!.matchAll(/•\s*\*([^*]+)\*/g)].map((m) => m[1]!.trim());
+      expect(anunciados.length).toBeGreaterThan(0);
+      for (const cmd of anunciados) {
+        enviados.length = 0;
+        const r = await bot.handle(msg(TEL_UNO, cmd));
+        expect(r.status, `el menú anuncia "${cmd}" pero el bot no lo trata como comando`).toMatch(
+          /^comando-/,
+        );
+      }
+    } finally {
+      (bot as unknown as { reply: unknown }).reply = original;
+    }
+  });
+
   it('"ayuda" responde el menú', async () => {
     const r = await bot.handle(msg(TEL_UNO, 'ayuda'));
     expect(r.status).toBe('comando-ayuda');
@@ -258,6 +288,43 @@ describe('comandos (RF-B10)', () => {
   it('acepta el comando con barra, como en Telegram', async () => {
     const r = await bot.handle(msg(TEL_UNO, '/ayuda'));
     expect(r.status).toBe('comando-ayuda');
+  });
+
+  it('una cortesía no se convierte en reclamo', async () => {
+    // Un "Gracias" salía como un reporte inventado —"Agujero en el techo del
+    // pasillo", urgencia alta— porque el clasificador está obligado a clasificar
+    // cualquier texto. Se ataja antes de llamar al modelo: además de no ensuciar
+    // la bandeja, ahorra una llamada paga por cada agradecimiento.
+    const antes = (await ticketsDe(unConsorcio.id)).length;
+    for (const texto of ['Gracias', 'gracias!', 'ok', 'dale', 'buenas']) {
+      const r = await bot.handle(msg(TEL_UNO, texto));
+      expect(r.status).toBe('cortesia');
+    }
+    expect((await ticketsDe(unConsorcio.id)).length).toBe(antes);
+  });
+
+  it('pero "dale" con una confirmación pendiente SÍ registra el reporte', async () => {
+    // La cortesía se ataja solo cuando no hay sesión abierta: ahí "dale" u "ok"
+    // significan "sí, registralo", y tragárselos dejaría al vecino sin poder
+    // confirmar.
+    await bot.handle(msg(TEL_UNO, 'se rompió la cerradura del portón'));
+    const r = await bot.handle(msg(TEL_UNO, 'dale'));
+    expect(r.status).not.toBe('cortesia');
+    expect(r.ticketId).toBeTruthy();
+  });
+
+  it('si el clasificador no encuentra un reporte, no inventa uno', async () => {
+    // El segundo cinturón, para las frases que no están en la lista de cortesías:
+    // el modelo devuelve `es_reporte: false` y el bot lo respeta. Sin esto,
+    // "No te dije gracias!" terminaba como un ticket de CONDUCTA titulado
+    // "Agradecimiento no expresado".
+    const antes = (await ticketsDe(unConsorcio.id)).length;
+    for (const texto of ['No te dije gracias!', 'hola, todo bien?', 'hola como andas']) {
+      const r = await bot.handle(msg(TEL_UNO, texto));
+      expect(r.status).toBe('sin-reporte');
+      expect(r.ticketId).toBe('');
+    }
+    expect((await ticketsDe(unConsorcio.id)).length).toBe(antes);
   });
 
   it('un mensaje vacío no crea un ticket vacío', async () => {

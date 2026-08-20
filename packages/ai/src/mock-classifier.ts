@@ -9,6 +9,31 @@ import { ClassifierOutput } from './schemas.js';
 export class MockClassifier implements IClassifier {
   async classify(text: string, opts: { promptVersion: string }) {
     const lower = text.toLowerCase();
+
+    // El modelo real puede negarse a clasificar cuando el mensaje no describe
+    // ningún problema (`es_reporte: false`). El mock imita eso, si no el camino
+    // de abstención del bot no se podría testear sin gastar una llamada paga.
+    // Solo matchea texto enteramente social: cualquier mensaje del dataset de
+    // evaluación tiene contenido además del saludo, así que la baseline no se
+    // mueve.
+    const soloSocial =
+      /^[\s\p{P}]*(?:(?:hola|buenas|buen\s+d[íi]a|buenas\s+(?:tardes|noches)|gracias|no\s+te\s+dije\s+gracias|chau|saludos|todo\s+bien|c[óo]mo\s+(?:va|and[áa]s|est[áa]s))[\s\p{P}]*)+$/iu.test(
+        lower.trim(),
+      );
+    if (soloSocial) {
+      return ClassifierOutput.parse({
+        es_reporte: false,
+        titulo: 'Sin reporte',
+        descripcion_normalizada: text.trim() || '(vacío)',
+        tipo: 'INFRAESTRUCTURA',
+        categoria: 'otros',
+        origen: 'UNIDAD',
+        urgencia: 'BAJA',
+        confianza: 0.9,
+        modelo: 'mock-classifier@0.0.1',
+        prompt_version: opts.promptVersion,
+      });
+    }
     const urgencia =
       /fuego|gas|incendio|inundaci/.test(lower)
         ? 'CRITICA'

@@ -84,7 +84,53 @@ export class BotService {
    * Palabras que el bot interpreta como comando y no como reporte. Se aceptan
    * con y sin barra: por WhatsApp nadie escribe "/estado".
    */
+  /**
+   * Cómo dice "sí" y "no" un vecino por chat.
+   *
+   * Están acá y no repetidos en cada handler porque las dos confirmaciones del
+   * bot —registrar el reporte y sumar el voto a un duplicado— aceptaban palabras
+   * distintas: "dale" servía para registrar y fallaba para votar, y el vecino
+   * recibía "No te entendí" sin motivo. Si mañana se agrega otra confirmación,
+   * hereda el mismo vocabulario.
+   */
+  private static readonly AFIRMA = /^(s|si|sí|sip|dale|ok|oka|okey|listo|confirmo|correcto|obvio|1)$/i;
+  private static readonly NIEGA = /^(n|no|nop|nope|cancelar|mal|negativo|2)$/i;
+
+  /**
+   * Cortesías que no son un reporte ni un comando. Se atajan antes de llamar al
+   * modelo: además de evitar el ticket inventado, ahorra una llamada paga por
+   * cada "gracias".
+   */
+  private static readonly CORTESIAS = new Set([
+    'gracias',
+    'muchas gracias',
+    'mil gracias',
+    'ok',
+    'oka',
+    'okey',
+    'dale',
+    'perfecto',
+    'buenisimo',
+    'buenísimo',
+    'genial',
+    'listo',
+    'barbaro',
+    'bárbaro',
+    'de nada',
+    'chau',
+    'saludos',
+    'buenas',
+    'buen dia',
+    'buen día',
+    'buenas tardes',
+    'buenas noches',
+  ]);
+
   private static readonly COMANDOS_SET = new Set([
+    // Singular y plural: el menú de ayuda anuncia "estado", y escribir justo la
+    // palabra que el bot te dijo tiene que funcionar. Antes solo estaba el
+    // plural, así que "estado" caía en la lista de cortesías y el vecino recibía
+    // "cuando necesites algo, contame" en lugar de sus reportes.
     'estado',
     'estados',
     'mis reportes',
@@ -157,8 +203,22 @@ export class BotService {
       return this.responderComando(inbound, resi, comando);
     }
 
-    // Sesión activa: ruteo según step.
+    // Una cortesía suelta no es un reporte. Ojo: solo cuando NO hay una sesión
+    // esperando respuesta, porque ahí "dale" u "ok" significan "sí, registralo".
     const session = await getActiveSession(inbound.from);
+    const cortesia = comando.replace(/[!¡.]+$/, '');
+    if (inbound.kind === 'text' && !session && BotService.CORTESIAS.has(cortesia)) {
+      // "De nada" a un "chau" queda raro, así que el agradecimiento se responde
+      // distinto del saludo de salida.
+      const texto = /gracias/.test(cortesia)
+        ? 'De nada. Cuando necesites algo, contame y lo registro.'
+        : 'Cuando necesites algo, contame y lo registro.';
+      await this.reply(inbound.from, texto, inbound);
+      await this.markWebhookProcessed(inbound.wamid);
+      return { status: 'cortesia' };
+    }
+
+    // Sesión activa: ruteo según step.
     if (session?.state.step === 'pick_consorcio') {
       return this.handleConsorcioChoice(inbound, resi, session.state);
     }
@@ -297,7 +357,7 @@ export class BotService {
     state: SessionState,
   ): Promise<{ status: string; ticketId?: string }> {
     const raw = (inbound.text ?? '').trim().toLowerCase();
-    const yes = /^(s|si|sí|yes|y|1)$/i.test(raw);
+    const yes = BotService.AFIRMA.test(raw);
     const no = /^(n|no|2)$/i.test(raw);
     if (!yes && !no) {
       await this.reply(inbound.from, 'Respondé Sí para sumar tu voto al reporte existente, o No para crear uno nuevo.', inbound);
@@ -363,6 +423,21 @@ export class BotService {
       this.log.error({ err: (err as Error).message }, 'classifier failed');
       await this.reply(inbound.from, 'No pude procesar tu reporte en este momento. Probá de nuevo en unos minutos.', inbound);
       return { status: 'classifier-error', ticketId: '' };
+    }
+
+    // El clasificador puede abstenerse (RF-B06). Sin esto, cualquier mensaje sin
+    // contenido salía convertido en un reclamo inventado: un "Gracias" llegaba a
+    // la bandeja como "Agujero en el techo del pasillo" con urgencia alta. Es
+    // mejor repreguntar que registrar basura — la administración abre la bandeja
+    // esperando problemas reales.
+    if (classified.es_reporte === false) {
+      await this.reply(
+        inbound.from,
+        'No encontré un problema para registrar en ese mensaje. Contame qué pasa y lo anoto: qué se rompió o qué está mal, y dónde.',
+        inbound,
+      );
+      await this.markWebhookProcessed(inbound.wamid);
+      return { status: 'sin-reporte', ticketId: '' };
     }
 
     let embedding: number[];
@@ -749,8 +824,8 @@ export class BotService {
       return { status: 'confirm-session-corrupt' };
     }
 
-    const si = /^(s[ií]|si|dale|ok|confirmo|correcto|1)$/.test(raw);
-    const no = /^(no|cancelar|mal|2)$/.test(raw);
+    const si = BotService.AFIRMA.test(raw);
+    const no = BotService.NIEGA.test(raw);
 
     if (!si && !no) {
       // Cualquier otra cosa se interpreta como una corrección: el residente

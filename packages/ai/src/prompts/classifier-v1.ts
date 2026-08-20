@@ -3,9 +3,16 @@
  * Versionado: cambios requieren correr `pnpm ai:eval` y registrar en CHANGELOG.md
  * (regla 9 de CLAUDE.md).
  */
-export const CLASSIFIER_PROMPT_VERSION = 'classifier-v1.5';
+export const CLASSIFIER_PROMPT_VERSION = 'classifier-v1.6';
 
 export const CLASSIFIER_SYSTEM = `Sos un asistente que recibe descripciones de problemas en edificios, barrios cerrados u oficinas de Argentina (español rioplatense) y devuelve una clasificación estructurada.
+
+PRIMERO decidí si hay algo que registrar. Si el mensaje NO describe ningún
+problema —un saludo, un "gracias", un "ok", una pregunta, una charla, o texto sin
+información— devolvé es_reporte: false y completá el resto con lo mínimo. NO
+inventes un problema que el mensaje no menciona: un "gracias" no es un agujero en
+el techo. Si hay aunque sea un indicio de algo que arreglar o de una queja sobre
+un vecino, es_reporte: true.
 
 Categorías permitidas (string): plomeria, electricidad, ascensor, limpieza, seguridad, conducta, otros.
 

@@ -27,6 +27,7 @@ código 1 si no se alcanzan los umbrales, así que se puede poner en CI.
 | classifier-v1.3 | 2026-08-20 | openai gpt-4o-mini | instalaciones generales son ESPACIO_COMUN; escala de urgencia completa (MEDIA vs ALTA) | 98,3 % | 95,6 % | 85,3 % | 59,7 % |
 | classifier-v1.4 | 2026-08-20 | openai gpt-4o-mini | seguridad por principio de riesgo y no por lista de objetos; se saca "portones automáticos ⇒ electricidad", que contradecía al dataset | 98,3 % | 94,9 % | 85,0 % | 62,5 % |
 | classifier-v1.5 | 2026-08-20 | openai gpt-4o-mini | desempate asimétrico (ante riesgo a personas, CRÍTICA) + el tono no altera la urgencia en ninguna dirección | **99,0 %** | **95,6 %** | **88,3 %** | **63,5 %** |
+| classifier-v1.6 | 2026-08-20 | openai gpt-4o-mini | `es_reporte`: el modelo puede abstenerse cuando el mensaje no describe ningún problema | **99,0 %** | **97,0 %** | 87,3 % | **65,5 %** |
 
 ### RF-C03 — urgencia frente al tono (20 casos trampa)
 
@@ -34,6 +35,7 @@ código 1 si no se alcanzan los umbrales, así que se puede poner en CI.
 |---|---|---|---|
 | classifier-v1.4 | 60,0 % | 80,0 % | 40,0 % |
 | classifier-v1.5 | **70,0 %** | 60,0 % | **80,0 %** |
+| classifier-v1.6 | **70,0 %** | **70,0 %** | 70,0 % |
 
 Estos 20 casos son el argumento central de la tesis y **el eval no los medía por
 separado**: estaban en el dataset desde el principio, promediados con los otros
@@ -180,3 +182,34 @@ decirlo así en la defensa.
   origen es genuinamente indeterminable sin repreguntar.
 - **Registros informales, formales y con errores de tipeo**: el canal es
   WhatsApp, no un formulario.
+
+## v1.6 — la abstención (2026-08-20)
+
+Un vecino escribió "Gracias" por Telegram y el bot le abrió un ticket: *"Agujero
+en el techo del pasillo"*, urgencia alta, nada de eso mencionado en el mensaje.
+"No te dije gracias!" salió como un ticket de CONDUCTA titulado *"Agradecimiento
+no expresado"*.
+
+No era un problema de calidad del prompt sino de contrato: el esquema **obligaba
+a clasificar**. Frente a un texto sin ningún problema adentro, la única salida
+válida era inventar uno, y el modelo hacía lo que se le pedía. La respuesta es un
+campo nuevo, `es_reporte`, que le da al modelo una salida honesta, y el bot la
+respeta cortando antes de crear el ticket.
+
+Sobre los 302 casos del dataset no hay regresión: `origen` +1,4 pts y `urgencia`
++2,0 pts, `categoria` −1,0 pt (3 casos sobre 300, dentro del ruido de muestreo de
+un set de este tamaño) y `tipo` igual. Era lo esperable: todos los casos del
+dataset **son** reportes, así que el campo nuevo no cambia nada ahí — el valor
+está justamente en los mensajes que el dataset no tiene.
+
+Eso es también su limitación como medición: la abstención no está evaluada por el
+eval, porque el dataset no incluye ni un solo mensaje que no sea un reporte.
+Quedó verificada a mano contra el modelo real (se abstiene en "Gracias", "No te
+dije gracias!" y "hola todo bien?"; sigue registrando "se rompió el portón" y
+"buenas, hay olor a gas") y con tests de integración contra el mock. Medirla en
+serio pide una clase nueva de casos en el dataset — cortesías, preguntas,
+consultas administrativas— que es trabajo pendiente, no resuelto.
+
+`categoria` sigue abajo del 90 % de corte por lo ya anotado más arriba: falta la
+categoría `gas` y el dataset etiqueta a veces por síntoma y a veces por causa
+raíz. Es deuda de taxonomía, no de prompt.
