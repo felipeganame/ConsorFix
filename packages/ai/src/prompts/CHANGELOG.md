@@ -22,6 +22,65 @@ código 1 si no se alcanzan los umbrales, así que se puede poner en CI.
 |---|---|---|---|---|---|---|---|
 | classifier-v1.0 | 2026-08-17 | mock | baseline del clasificador simulado | — | 61,1 % | 50,7 % | 37,2 % |
 | classifier-v1.1 | 2026-08-17 | mock | detección de `tipo` y `unidad_reportada_texto` (RF-F01) | 88,3 % | 61,1 % | 50,7 % | 37,2 % |
+| classifier-v1.1 | 2026-08-20 | **openai** gpt-4o-mini | primera corrida con el modelo real | 98,7 % | 90,5 % | 80,7 % | 55,6 % |
+| classifier-v1.2 | 2026-08-20 | **openai** gpt-4o-mini | guía por categoría + `otros` como último recurso; conducta ⇒ origen UNIDAD; CRÍTICA vs ALTA definidas | 98,7 % | **94,9 %** | 84,3 % | 56,0 % |
+| classifier-v1.3 | 2026-08-20 | openai gpt-4o-mini | instalaciones generales son ESPACIO_COMUN; escala de urgencia completa (MEDIA vs ALTA) | 98,3 % | 95,6 % | 85,3 % | 59,7 % |
+| classifier-v1.4 | 2026-08-20 | openai gpt-4o-mini | seguridad por principio de riesgo y no por lista de objetos; se saca "portones automáticos ⇒ electricidad", que contradecía al dataset | 98,3 % | 94,9 % | 85,0 % | 62,5 % |
+| classifier-v1.5 | 2026-08-20 | openai gpt-4o-mini | desempate asimétrico (ante riesgo a personas, CRÍTICA) + el tono no altera la urgencia en ninguna dirección | **99,0 %** | **95,6 %** | **88,3 %** | **63,5 %** |
+
+### RF-C03 — urgencia frente al tono (20 casos trampa)
+
+| Version | global | tono-inflado | tono-atenuado |
+|---|---|---|---|
+| classifier-v1.4 | 60,0 % | 80,0 % | 40,0 % |
+| classifier-v1.5 | **70,0 %** | 60,0 % | **80,0 %** |
+
+Estos 20 casos son el argumento central de la tesis y **el eval no los medía por
+separado**: estaban en el dataset desde el principio, promediados con los otros
+282. Se agregó la métrica al `ai:eval`, partida en las dos direcciones del sesgo,
+porque fallar en cada una significa algo distinto: en `tono-inflado` el sistema se
+deja llevar por el drama; en `tono-atenuado` pasa por alto un peligro real porque
+el vecino fue educado, y eso es mucho más grave.
+
+**El hallazgo no es el porcentaje, es el patrón.** En v1.4 el modelo detectaba
+correctamente la gravedad de los casos minimizados —los ubicaba en ALTA, no en
+BAJA— pero descontaba un nivel por la cortesía del mensaje. En la dirección
+opuesta pasaba lo simétrico: *"URGENTÍSIMO una lamparita"* subía de BAJA a MEDIA.
+El tono corría la urgencia exactamente un nivel, en su misma dirección.
+
+v1.5 lo corrige con un desempate **asimétrico**: sin riesgo a personas se elige el
+nivel menor (inflar todo hace que nada sea urgente), pero ante riesgo se elige
+CRÍTICA aunque haya duda, porque subestimar un peligro cuesta una persona
+lastimada y sobreestimarlo cuesta una visita de más. El acierto en `tono-atenuado`
+pasó de 40 % a 80 %, a costa de `tono-inflado` (80 % → 60 %). Es el intercambio
+correcto y conviene defenderlo como decisión, no disimularlo como mejora neta.
+
+### Nota metodológica: por qué se paró en v1.5
+
+Categoría recorrió 80,7 % → 84,3 % → 85,3 % → 85,0 % → 88,3 % en cinco
+iteraciones, contra un umbral de 90 % (RF-C02). Seguir agregando reglas para que
+el modelo acierte casos puntuales de este dataset sería **sobreajustar al conjunto
+de evaluación**: el número sube y la capacidad real no. Los cambios de v1.3 a v1.5
+se limitaron a corregir contradicciones introducidas por versiones anteriores y a
+reemplazar listas de objetos por los principios que esas listas intentaban
+expresar.
+
+El análisis de los 47 desaciertos de categoría en v1.3 mostró tres grupos:
+
+1. **Una contradicción propia**: v1.2 mandaba "portones automáticos" a
+   electricidad y el dataset los etiqueta `otros`. Corregido en v1.4.
+2. **Una categoría faltante en la taxonomía**: el gas no es plomería ni
+   electricidad, y aparece en al menos cuatro casos. El dataset los pone en
+   `plomeria` (por los caños) y el modelo en `otros` o `seguridad` (por el
+   riesgo); los dos criterios son razonables. RF-C02 ya prevé que la taxonomía sea
+   configurable, así que agregar `gas` es coherente con el diseño.
+3. **Ambigüedad irreducible entre síntoma y causa raíz**: *"se cayó un pedazo de
+   revoque del techo del baño por la humedad"* está etiquetado `plomeria` (la
+   causa) y el modelo responde `otros` (lo que se ve). Hace falta fijar el
+   criterio y aplicarlo a los 302 casos antes de que este número signifique algo.
+
+Antes de volver a tocar el prompt conviene resolver 2 y 3, que son decisiones de
+producto y de etiquetado, no de ingeniería de prompts.
 
 ### Por qué `tipo` tiene el umbral más alto (95 %)
 
@@ -52,6 +111,59 @@ pnpm ai:eval -- --provider openai --out results/classifier-v1.0-openai.json
 
 Esa corrida es la que produce las métricas del capítulo de validación de la
 tesis. El comando imprime al final una fila lista para pegar en esta tabla.
+
+## Lectura de la corrida del 2026-08-20 (primera con modelo real)
+
+Antes de esta fecha las cifras salían del mock, que no es una medición: el stub
+clasifica por palabras clave y siempre acierta lo que él mismo decidió. Al poner
+una API key apareció que **el clasificador real nunca había funcionado**: el modo
+estricto de salida estructurada de OpenAI exige que todas las propiedades estén en
+`required`, dos campos eran `optional()`, y las 302 llamadas se rechazaban. Está
+en el commit que arregla el schema; vale para la tesis como ejemplo de que
+"implementado" y "funciona" no son lo mismo.
+
+**Qué cambió v1.2 y por qué.** La matriz de confusión de v1.1 mostraba una sola
+causa dominante en categoría: `otros` con 50,5 % de precisión, comiéndose 15 casos
+de plomería, 15 de seguridad, 11 de conducta y 7 de limpieza. Cuando el modelo
+elegía una categoría específica acertaba entre 96 % y 100 %, así que el problema
+no era de capacidad sino de instrucción: el prompt listaba las siete categorías
+sin decir qué entra en cada una ni que `otros` fuera el último recurso.
+
+**El eval encontró una ambigüedad de la especificación, no solo errores.** Los 21
+desaciertos de `origen` en v1.1 eran casi todos conductas donde el dataset dice
+UNIDAD y el modelo decía ESPACIO_COMUN (*"el del 3D no levanta la caca del perro
+en el jardín"*). Ninguno se equivocaba: `origen` significaba dos cosas distintas
+—dónde ocurre el hecho, o quién puede verlo—. v1.2 lo define como decisión de
+visibilidad y fija que una conducta es siempre UNIDAD, porque publicar una
+denuncia a todo el consorcio expone a las dos partes. El recall de UNIDAD pasó de
+84,3 % a 97,0 %.
+
+**Lo que sigue faltando, con su causa identificada.**
+
+- **Categoría 84,3 % contra un umbral de 90 %** (RF-C02). `otros` mejoró de 50,5 %
+  a 60,7 % de precisión pero sigue absorbiendo 12 casos de plomería y 10 de
+  seguridad. Seguridad tiene 64,7 % de recall.
+- **Origen: instalaciones generales mal clasificadas.** El prompt enumera lugares
+  comunes (palier, hall, cochera) y no menciona instalaciones centrales, así que
+  *"la calefacción central"*, *"el filtro del tanque"*, *"el matafuegos del quinto
+  piso"* y *"el toldo de la terraza"* se van a UNIDAD. Es una omisión del prompt,
+  no del modelo.
+- **Urgencia 56 %, y es el más débil por una razón de especificación**: de 105
+  casos MEDIA el modelo dijo ALTA en 49. v1.2 definió CRÍTICA vs ALTA (recall de
+  CRÍTICA: 32 % → 42 %) pero **nadie definió dónde termina MEDIA y empieza ALTA**,
+  ni en el prompt ni en los requerimientos. Sin esa definición la métrica mide un
+  desacuerdo, no un error.
+- **Ambigüedades del dataset que ningún prompt puede resolver.** *"Entraron a
+  robar a una cochera y forzaron un auto"* no es una cosa rota ni la conducta de un
+  vecino: la taxonomía no tiene dónde ponerlo. *"Dejan la basura afuera del
+  contenedor"* es conducta y limpieza a la vez. *"El caño de la cocina del 4to
+  gotea sobre la cochera"* nace en una unidad y afecta un espacio común. Antes de
+  seguir subiendo números hay que decidir qué es la respuesta correcta en estos
+  casos, o marcarlos como indeterminables igual que ya se hace con los `ambiguo`.
+
+El dataset es 100 % sintético (302 casos, 0 del piloto). Las cifras miden
+consistencia contra etiquetas propias, no desempeño en producción, y conviene
+decirlo así en la defensa.
 
 ## Notas de diseño del dataset
 

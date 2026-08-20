@@ -147,6 +147,46 @@ async function main(): Promise<void> {
     console.log('');
   }
 
+  // ── RF-C03: urgencia técnica, independiente del tono ─────────────────────
+  //
+  // El dataset tiene 20 casos trampa etiquetados `tono-inflado` y
+  // `tono-atenuado`: "URGENTÍSIMO!!! SE QUEMÓ UNA LAMPARITA" tiene que dar BAJA,
+  // y "nada importante, pero hay un cable pelado" tiene que dar CRITICA. Son la
+  // única evidencia de que el clasificador juzga por criterio técnico y no por
+  // cuánto grita quien escribe — que es el argumento central de la tesis y lo que
+  // distingue esto de un triage humano leyendo por tono.
+  //
+  // Estaban en el dataset desde el principio y el eval los promediaba con el
+  // resto, así que la métrica que sostiene el argumento no se reportaba nunca.
+  const conTono = casos
+    .map((caso, i) => ({ caso, salida: salidas[i] }))
+    .filter(({ caso }) => caso.tags?.some((t) => t.startsWith('tono-')));
+
+  if (conTono.length > 0) {
+    const porTag = new Map<string, { total: number; aciertos: number }>();
+    const desaciertos: string[] = [];
+    for (const { caso, salida } of conTono) {
+      const esperado = caso.expected.urgencia;
+      if (!esperado) continue;
+      const tag = caso.tags?.find((t) => t.startsWith('tono-')) ?? 'tono';
+      const acc = porTag.get(tag) ?? { total: 0, aciertos: 0 };
+      acc.total += 1;
+      if (salida?.urgencia === esperado) acc.aciertos += 1;
+      else desaciertos.push(`      ${caso.id}: esperaba ${esperado}, dio ${salida?.urgencia ?? '(nada)'} — "${caso.text.slice(0, 64)}"`);
+      porTag.set(tag, acc);
+    }
+    const total = [...porTag.values()].reduce((a, x) => a + x.total, 0);
+    const aciertos = [...porTag.values()].reduce((a, x) => a + x.aciertos, 0);
+    console.log('  ── RF-C03: urgencia frente al tono ──');
+    console.log(`    global: ${pct(aciertos / total)} (${aciertos}/${total})`);
+    for (const [tag, x] of [...porTag].sort()) {
+      const que = tag === 'tono-inflado' ? 'dramatizado, urgencia real baja' : 'minimizado, urgencia real alta';
+      console.log(`    ${tag.padEnd(15)} ${pct(x.aciertos / x.total)} (${x.aciertos}/${x.total})  ${que}`);
+    }
+    for (const d of desaciertos.slice(0, 8)) console.log(d);
+    console.log('');
+  }
+
   // Umbrales
   let ok = true;
   console.log('  ── Criterios de salida ──');
